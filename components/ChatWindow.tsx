@@ -167,6 +167,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
 
+  const chatCwd = session?.cwd ?? newSessionCwd ?? null;
+
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
@@ -192,6 +194,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       retryInfo={retryInfo}
       soundEnabled={soundEnabled}
       onSoundToggle={onSoundToggle}
+      cwd={chatCwd ?? undefined}
     />
   );
 
