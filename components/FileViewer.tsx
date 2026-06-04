@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTheme } from "@/hooks/useTheme";
 import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import MermaidBlock from "./MermaidBlock";
 
 interface Props {
   filePath: string;
@@ -800,7 +801,24 @@ function TextFileViewer({ filePath, cwd }: Props) {
             className="markdown-body markdown-file-preview"
             style={{ padding: "24px 32px", maxWidth: 800 }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.content}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                pre({ children }) {
+                  return <pre style={{ background: "var(--bg-selected)", padding: 12, borderRadius: 6, overflow: "auto" }}>{children}</pre>;
+                },
+                code({ className, children }) {
+                  const lang = className?.replace("language-", "") ?? "";
+                  const raw = String(children);
+                  if (lang === "mermaid") {
+                    return <MermaidBlock code={raw.replace(/\n$/, "")} isDark={isDark} />;
+                  }
+                  return <code>{children}</code>;
+                },
+              }}
+            >
+              {data.content}
+            </ReactMarkdown>
           </div>
         ) : (
           <SyntaxHighlighter

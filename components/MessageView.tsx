@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
+import MermaidBlock from "./MermaidBlock";
 import type {
   AgentMessage,
   UserMessage,
@@ -522,6 +523,7 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
 }
 
 function TextBlock({ block }: { block: TextContent }) {
+  const { isDark } = useTheme();
   return (
     <div className="markdown-body">
       <ReactMarkdown
@@ -530,6 +532,9 @@ function TextBlock({ block }: { block: TextContent }) {
           code({ className, children, ...props }) {
             const lang = className?.replace("language-", "") ?? "";
             const raw = String(children);
+            if (lang === "mermaid") {
+              return <MermaidBlock code={raw.replace(/\n$/, "")} isDark={isDark} />;
+            }
             const isBlock = className?.includes("language-") || raw.includes("\n");
             if (isBlock) {
               return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
