@@ -26,8 +26,8 @@
     "build": "next build --webpack",
     "start": "next start -p 30141",
     "desktop:dev": "node scripts/electron-dev.cjs",
-    "desktop:pack": "bun run build && rm -rf .next/dev .next/cache && electron-builder --dir",
-    "desktop:build": "bun run build && rm -rf .next/dev .next/cache && electron-builder",
+    "desktop:pack": "bun run build && electron-builder --dir",
+    "desktop:build": "bun run build && electron-builder",
     "lint": "eslint .",
     "release": "bun version patch --no-git-tag-version && bun run build && bun publish --access public"
   },

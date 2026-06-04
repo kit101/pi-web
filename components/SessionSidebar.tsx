@@ -217,6 +217,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [dirBrowserParent, setDirBrowserParent] = useState<string | null>(null);
   const [dirBrowserSlide, setDirBrowserSlide] = useState<"forward" | "backward" | "none">("none");
   const [dirHighlight, setDirHighlight] = useState(-1);
+  const [dirQuickPath, setDirQuickPath] = useState("");
+  const dirQuickInputRef = useRef<HTMLInputElement>(null);
   const dirListRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
@@ -327,6 +329,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         setDirBrowserPath(data.root);
         setDirBrowserEntries(data.entries ?? []);
         setDirBrowserParent(data.parent ?? null);
+        setDirQuickPath(data.root);
         setDirBrowserLoading(false);
         // Trigger slide animation after entries are rendered
         if (prevDirPathRef.current) {
@@ -418,6 +421,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       } else {
         confirmDirSelection();
       }
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      e.preventDefault();
+      dirQuickInputRef.current?.focus();
+      dirQuickInputRef.current?.select();
+      return;
     }
   }, [closeDirBrowser, dirBrowserParent, browseDirectory, dirBrowserEntries, dirHighlight, confirmDirSelection]);
 
@@ -972,38 +982,52 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             >×</button>
           </div>
 
-          {/* Breadcrumb */}
+          {/* Quick path input */}
           <div style={{
-            padding: "6px 10px",
+            padding: "4px 10px",
             borderBottom: "1px solid var(--border)",
-            display: "flex", alignItems: "center", gap: 2,
+            display: "flex", alignItems: "center", gap: 4,
             flexShrink: 0,
-            overflowX: "auto",
-            whiteSpace: "nowrap",
           }}>
-            {breadcrumbs.map((seg, i) => (
-              <span key={seg.path} style={{ display: "flex", alignItems: "center", gap: 2 }}>
-                {i > 0 && (
-                  <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", flexShrink: 0 }}>/</span>
-                )}
-                <button
-                  onClick={() => browseDirectory(seg.path, i < breadcrumbs.length - 1 ? "backward" : "forward")}
-                  style={{
-                    background: "none", border: "none",
-                    fontFamily: "var(--font-mono)", fontSize: 10,
-                    color: i === breadcrumbs.length - 1 ? "var(--text)" : "var(--text-muted)",
-                    fontWeight: i === breadcrumbs.length - 1 ? 600 : 400,
-                    cursor: "pointer", padding: "2px 4px",
-                    borderRadius: 4,
-                    whiteSpace: "nowrap",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-                >
-                  {seg.name}
-                </button>
-              </span>
-            ))}
+            <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="0.8" style={{ flexShrink: 0 }}>
+              <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 7.5V3Z" />
+            </svg>
+            <input
+              ref={dirQuickInputRef}
+              value={dirQuickPath}
+              onChange={(e) => setDirQuickPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && dirQuickPath.trim()) {
+                  browseDirectory(dirQuickPath.trim(), "forward");
+                  dirListRef.current?.focus();
+                }
+                if (e.key === "Escape") {
+                  setDirQuickPath(dirBrowserPath);
+                  dirListRef.current?.focus();
+                }
+              }}
+              placeholder="/path/to/directory"
+              style={{
+                flex: 1,
+                fontSize: 10,
+                fontFamily: "var(--font-mono)",
+                padding: "4px 6px",
+                border: "1px solid transparent",
+                borderRadius: 4,
+                outline: "none",
+                background: "var(--bg-hover)",
+                color: "var(--text-muted)",
+                transition: "border-color 120ms ease, color 120ms ease",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "var(--accent)";
+                e.currentTarget.style.color = "var(--text)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = "transparent";
+                e.currentTarget.style.color = "var(--text-muted)";
+              }}
+            />
           </div>
 
           {/* Entry list */}
@@ -1093,46 +1117,71 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
           {/* Footer */}
           <div style={{
-            padding: "8px 12px",
+            padding: "6px 10px",
             borderTop: "1px solid var(--border)",
-            display: "flex", alignItems: "center", gap: 8,
+            display: "flex", alignItems: "center", gap: 4,
             flexShrink: 0,
+            overflow: "hidden",
           }}>
-            <span style={{
-              flex: 1, fontSize: 10, fontFamily: "var(--font-mono)",
-              color: "var(--text-dim)", overflow: "hidden",
-              textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }} title={dirBrowserPath}>
-              {dirBrowserPath || "Loading…"}
-            </span>
-            <button
-              onClick={closeDirBrowser}
-              style={{
-                padding: "5px 12px",
-                background: "none", border: "1px solid var(--border)",
-                borderRadius: 6, color: "var(--text-muted)",
-                fontSize: 11, cursor: "pointer", flexShrink: 0,
-                transition: "background 120ms ease",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={confirmDirSelection}
-              style={{
-                padding: "5px 14px",
-                background: "var(--accent)", border: "none",
-                borderRadius: 6, color: "#fff",
-                fontSize: 11, fontWeight: 600, cursor: "pointer", flexShrink: 0,
-                transition: "background 120ms ease",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-hover)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent)"; }}
-            >
-              Select
-            </button>
+            <div style={{
+              flex: 1, minWidth: 0,
+              overflowX: "auto", whiteSpace: "nowrap",
+              display: "flex", alignItems: "center", gap: 2,
+            }}>
+              {breadcrumbs.map((seg, i) => (
+                <span key={seg.path} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  {i > 0 && (
+                    <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)", flexShrink: 0 }}>/</span>
+                  )}
+                  <button
+                    onClick={() => browseDirectory(seg.path, i < breadcrumbs.length - 1 ? "backward" : "forward")}
+                    style={{
+                      background: "none", border: "none",
+                      fontFamily: "var(--font-mono)", fontSize: 10,
+                      color: i === breadcrumbs.length - 1 ? "var(--text)" : "var(--text-muted)",
+                      fontWeight: i === breadcrumbs.length - 1 ? 600 : 400,
+                      cursor: "pointer", padding: "2px 4px",
+                      borderRadius: 4,
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                  >
+                    {seg.name}
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <button
+                onClick={closeDirBrowser}
+                style={{
+                  padding: "5px 12px",
+                  background: "none", border: "1px solid var(--border)",
+                  borderRadius: 6, color: "var(--text-muted)",
+                  fontSize: 11, cursor: "pointer",
+                  transition: "background 120ms ease",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDirSelection}
+                style={{
+                  padding: "5px 14px",
+                  background: "var(--accent)", border: "none",
+                  borderRadius: 6, color: "#fff",
+                  fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  transition: "background 120ms ease",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-hover)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "var(--accent)"; }}
+              >
+                Select
+              </button>
+            </div>
           </div>
         </div>
       </div>,
