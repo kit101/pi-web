@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import { MentionPopup } from "./MentionPopup";
+import { useFileMention } from "@/hooks/useFileMention";
+import { useSendShortcut } from "@/hooks/useSendShortcut";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -37,6 +40,7 @@ interface Props {
   retryInfo?: { attempt: number; maxAttempts: number; errorMessage?: string } | null;
   soundEnabled?: boolean;
   onSoundToggle?: () => void;
+  cwd?: string;
 }
 
 export interface ChatInputHandle {
@@ -65,6 +69,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo,
   soundEnabled, onSoundToggle,
+  cwd,
 }: Props, ref) {
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -72,8 +77,32 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const { sendShortcut } = useSendShortcut();
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleInsertMention = useCallback((newValue: string, cursorPos: number) => {
+    setValue(newValue);
+    // Sync DOM value immediately so onChange handler sees correct text
+    const ta = textareaRef.current;
+    if (ta) ta.value = newValue;
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.setSelectionRange(cursorPos, cursorPos);
+        ta.focus();
+        ta.style.height = "auto";
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      }
+    });
+  }, []);
+
+  const mention = useFileMention({
+    textareaRef,
+    cwd: cwd ?? "",
+    onInsertMention: handleInsertMention,
+    onSyncValue: handleInsertMention,
+  });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
@@ -185,17 +214,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-        e.preventDefault();
-        if (isStreaming && (onSteer || onFollowUp)) {
-          // Default Enter sends as steer if available, else followup
-          sendQueued(onSteer ? "steer" : "followup");
-        } else {
-          handleSend();
+      // Let mention handle navigation keys when popup is active
+      mention.handleKeyDown(e);
+      if (e.defaultPrevented || mention.active) return;
+
+      if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+        const mod = e.metaKey || e.ctrlKey;
+        const shouldSend =
+          sendShortcut === "mod-enter-send"
+            ? mod && !e.shiftKey
+            : !e.shiftKey && !mod;
+
+        if (shouldSend) {
+          e.preventDefault();
+          if (isStreaming && (onSteer || onFollowUp)) {
+            sendQueued(onSteer ? "steer" : "followup");
+          } else {
+            handleSend();
+          }
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, sendQueued, handleSend]
+    [isStreaming, onSteer, onFollowUp, sendQueued, handleSend, mention, sendShortcut]
   );
 
   const handleInput = useCallback(() => {
@@ -349,7 +389,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <textarea
             ref={textareaRef}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              setValue(e.target.value);
+              mention.onChange(e.target.value);
+            }}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
             onPaste={handlePaste}
@@ -375,6 +418,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               overflow: "auto",
             }}
           />
+
+          {/* @ File Mention Popup */}
+          {cwd && mention.active && mention.matches.length > 0 && (
+            <MentionPopup
+              position={mention.position}
+              items={mention.matches}
+              selectedIndex={mention.selectedIndex}
+              loading={mention.loading}
+              onSelect={mention.selectItem}
+              onDismiss={mention.dismiss}
+            />
+          )}
 
           {isStreaming ? (
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-end" }}>

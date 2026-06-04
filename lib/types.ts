@@ -163,6 +163,13 @@ export type SessionEntry =
   | LabelEntry
   | SessionInfoEntry;
 
+export interface FileMentionItem {
+  label: string;
+  type: "file" | "folder";
+  fullPath: string;
+  relativePath: string;
+}
+
 export type FileEntry = SessionHeader | SessionEntry;
 
 export interface SessionTreeNode {

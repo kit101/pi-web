@@ -32,3 +32,13 @@ export function getRelativeFilePath(filePath: string, cwd?: string): string {
 export function joinFilePath(parent: string, child: string): string {
   return `${normalizeFilePathSlashes(parent).replace(/\/$/, "")}/${child}`;
 }
+
+export function getRelativeFolderPath(folderPath: string, cwd?: string): string {
+  if (!cwd) return folderPath;
+  const normalizedFolder = normalizeFilePathSlashes(folderPath).replace(/\/+$/, "");
+  const normalizedCwd = normalizeFilePathSlashes(cwd).replace(/\/$/, "");
+  if (normalizedFolder.startsWith(normalizedCwd + "/")) {
+    return normalizedFolder.slice(normalizedCwd.length + 1) + "/";
+  }
+  return folderPath;
+}
