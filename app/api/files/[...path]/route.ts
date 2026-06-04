@@ -244,6 +244,128 @@ function streamFile(filePath: string, stat: fs.Stats, contentType: string, range
   });
 }
 
+import { spawn } from "child_process";
+
+function spawnAsync(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { shell: false });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) reject(new Error(`Command exited with code ${code}`));
+      else resolve();
+    });
+  });
+}
+
+function detectPlatform(): "darwin" | "win32" | "linux" | "other" {
+  if (process.platform === "darwin") return "darwin";
+  if (process.platform === "win32") return "win32";
+  if (process.platform === "linux") return "linux";
+  return "other";
+}
+
+/** Open a path in the system file manager (Finder / Explorer / xdg-open) */
+async function revealPath(targetPath: string, isDirectory: boolean): Promise<void> {
+  const platform = detectPlatform();
+  if (platform === "darwin") {
+    // `open -R` reveals the item in Finder; works for both files and dirs
+    await spawnAsync("open", ["-R", targetPath]);
+  } else if (platform === "win32") {
+    if (isDirectory) {
+      await spawnAsync("explorer", [targetPath]);
+    } else {
+      // /select opens Explorer with the file highlighted
+      await spawnAsync("explorer", ["/select,", targetPath]);
+    }
+  } else {
+    await spawnAsync("xdg-open", [targetPath]);
+  }
+}
+
+const EDITOR_COMMANDS: Record<string, (file: string) => { cmd: string; args: string[] }> = {
+  cursor: (f) => ({ cmd: "cursor", args: [f] }),
+  sublime: (f) => ({ cmd: "subl", args: [f] }),
+  code: (f) => ({ cmd: "code", args: [f] }),
+  vscode: (f) => ({ cmd: "code", args: [f] }),
+  webstorm: (f) => ({ cmd: "webstorm", args: [f] }),
+  vim: (f) => ({ cmd: "vim", args: [f] }),
+  nvim: (f) => ({ cmd: "nvim", args: [f] }),
+};
+
+/** Open a file in the user's preferred external editor */
+async function editPath(targetPath: string, preferredEditor?: string): Promise<void> {
+  const envEditor = process.env.PI_EDITOR?.toLowerCase();
+
+  // Priority: env var > preferredEditor param > auto-detect
+  const toTry = [];
+  if (envEditor) toTry.push(envEditor);
+  if (preferredEditor) toTry.push(preferredEditor.toLowerCase());
+  if (!envEditor && !preferredEditor) {
+    // Auto-detect: try all known editors
+    toTry.push(...Object.keys(EDITOR_COMMANDS));
+  }
+
+  // Deduplicate while preserving order
+  const unique = [...new Set(toTry)];
+
+  for (const editor of unique) {
+    const cmdFn = EDITOR_COMMANDS[editor];
+    if (!cmdFn) continue;
+    try {
+      const { cmd, args } = cmdFn(targetPath);
+      await spawnAsync(cmd, args);
+      return;
+    } catch {
+      continue;
+    }
+  }
+
+  // Fallback: open with default app
+  await revealPath(targetPath, false);
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  try {
+    const { path: segments } = await params;
+    const filePath = filePathFromSegments(segments);
+    const body = await request.json();
+    const action = body.action as string;
+
+    if (!action || !["reveal", "edit"].includes(action)) {
+      return NextResponse.json({ error: "Invalid action. Use 'reveal' or 'edit'." }, { status: 400 });
+    }
+
+    const allowedRoots = await getAllowedRoots();
+    if (!isPathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (action === "reveal") {
+      await revealPath(filePath, stat.isDirectory());
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "edit") {
+      await editPath(filePath, body.editor);
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: "Unexpected action" }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
