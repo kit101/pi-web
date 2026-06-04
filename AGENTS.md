@@ -138,3 +138,11 @@ Location: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
 --accent --user-bg --tool-bg
 --font-mono
 ```
+
+---
+
+## Shared Config Pattern
+
+所有 localStorage 配置项使用 `useSyncExternalStore` + 模块级 `listeners` Set。**禁止** `useState` lazy init 或 `CustomEvent` 跨组件同步。
+
+参照 `hooks/useTheme.ts`、`hooks/useEditor.ts`、`hooks/useSendShortcut.ts` 写新 hook。消费者直接调 hook，无需 props 传递。
