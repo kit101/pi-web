@@ -3,12 +3,12 @@
 ## Quick Start
 
 ```bash
-npm run dev   # port 3030
+bun run dev   # port 3030
 ```
 
 Typecheck: `node_modules/.bin/tsc --noEmit`  
 Lint: `node node_modules/next/dist/bin/next lint`  
-**Never run `next build` during dev** — pollutes `.next/` and breaks `npm run dev`.
+**Never run `next build` during dev** — pollutes `.next/` and breaks `bun run dev`.
 
 ---
 

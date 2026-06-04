@@ -50,9 +50,27 @@ PORT=8080 pi-web                 # 也支持环境变量
 ## 开发
 
 ```bash
-npm install
-npm run dev   # 端口 30141
+bun i
+bun run dev   # 端口 30141
 ```
+
+### 桌面版开发
+
+项目内置 Electron 桌面壳，复用现有 Next.js 服务端能力：
+
+```bash
+bun i
+bun run desktop:dev
+```
+
+打包跨平台安装包：
+
+```bash
+bun run desktop:pack    # 生成未压缩应用，便于本机检查
+bun run desktop:build   # 生成 macOS / Windows / Linux 安装包
+```
+
+桌面版会在本机启动一个 `127.0.0.1` Next.js 服务，并在 Electron 窗口中加载它；因此现有会话读取、SSE、文件浏览和 AgentSession 生命周期逻辑无需重写。
 
 ## 项目结构
 

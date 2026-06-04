@@ -3,11 +3,16 @@
   "version": "0.6.12",
   "description": "Web UI for the pi coding agent",
   "license": "MIT",
+  "main": "electron/main.cjs",
   "bin": {
     "pi-web": "bin/pi-web.js"
   },
   "files": [
     "bin",
+    "electron",
+    "scripts",
+    "assets",
+    "app/favicon.ico",
     ".next",
     "!.next/cache",
     "!.next/dev",
@@ -20,14 +25,16 @@
     "dev": "next dev -p 30141",
     "build": "next build --webpack",
     "start": "next start -p 30141",
+    "desktop:dev": "node scripts/electron-dev.cjs",
+    "desktop:pack": "bun run build && rm -rf .next/dev .next/cache && electron-builder --dir",
+    "desktop:build": "bun run build && rm -rf .next/dev .next/cache && electron-builder",
     "lint": "eslint .",
-    "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public"
+    "release": "bun version patch --no-git-tag-version && bun run build && bun publish --access public"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.75.5",
     "@earendil-works/pi-coding-agent": "^0.75.5",
     "@lobehub/icons": "^5.6.0",
-    "@types/react-syntax-highlighter": "^15.5.13",
     "next": "16.2.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -38,6 +45,9 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.8.1",
     "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -46,5 +56,40 @@
     "postcss": "^8",
     "tailwindcss": "^4.2.2",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "io.github.qk0446.pi",
+    "productName": "PI",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "assets/**/*",
+      "app/favicon.ico",
+      "electron/**/*",
+      ".next/**/*",
+      "!.next/dev/**/*",
+      "!.next/cache/**/*",
+      "public/**/*",
+      "next.config.ts",
+      "package.json",
+      "!node_modules/electron/**/*",
+      "!node_modules/electron-builder/**/*",
+      "!node_modules/app-builder-bin/**/*",
+      "!node_modules/app-builder-lib/**/*",
+      "!node_modules/builder-util/**/*",
+      "!node_modules/builder-util-runtime/**/*",
+      "!node_modules/dmg-builder/**/*"
+    ],
+    "mac": {
+      "icon": "assets/icon.icns",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    }
   }
 }
