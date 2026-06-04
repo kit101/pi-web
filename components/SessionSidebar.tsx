@@ -942,7 +942,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             background: "var(--bg)", borderRadius: 12,
             border: "1px solid var(--border)",
             boxShadow: dirBrowserVisible ? "0 20px 60px rgba(0,0,0,0.20), 0 0 0 1px rgba(0,0,0,0.04)" : "0 8px 24px rgba(0,0,0,0.08)",
-            width: 400, height: 420,
+            width: "55vw", height: "70vh",
+            minWidth: "480px", minHeight: "640px",
             display: "flex", flexDirection: "column",
             overflow: "hidden",
             transform: dirBrowserVisible ? "scale(1)" : "scale(0.96)",
@@ -1008,7 +1009,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           {/* Entry list */}
           <div
             ref={dirListRef}
-            style={{ overflowY: "auto", flex: 1, minHeight: 0 }}
+            style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0 }}
             onKeyDown={handleDirKeyDown}
             tabIndex={0}
           >
