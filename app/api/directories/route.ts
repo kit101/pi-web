@@ -49,6 +49,9 @@ async function getAllowedRoots(): Promise<Set<string>> {
     // ignore if home is unreadable
   }
 
+  // Include home so the directory browser can navigate through it
+  roots.add(home);
+
   globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
   return roots;
 }
