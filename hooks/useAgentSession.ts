@@ -518,6 +518,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
+  const handleExport = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      // pi 原生导出（不传 outputPath，pi 自动生成时间戳文件名）
+      const result = await sendAgentCommand<{ path: string }>(sid, { type: "export_html" });
+      console.log("Session exported to:", result.path);
+      
+    } catch (e) {
+      console.error("Failed to export:", e);
+    }
+  }, []);
+
+  const handleSlashCommand = useCallback((name: string) => {
+    if (name === "compact") handleCompact();
+    else if (name === "export") handleExport();
+  }, [handleCompact, handleExport]);
+
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     setThinkingLevel(level);
     if (level === "auto") return; // "auto" leaves pi's current setting untouched
@@ -647,7 +665,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
+    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction, handleExport, handleSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, loadTools, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,
     // Subscriptions

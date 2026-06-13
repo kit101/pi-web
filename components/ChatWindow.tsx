@@ -101,7 +101,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
-    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
+    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction, handleSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, handleAgentEventRef,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
@@ -182,6 +182,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       modelList={modelList}
       onModelChange={handleModelChange}
       onCompact={session || isNew ? handleCompact : undefined}
+      onSlashCommand={session || isNew ? handleSlashCommand : undefined}
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
       compactError={compactError}

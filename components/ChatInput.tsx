@@ -4,6 +4,8 @@ import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, f
 import { MentionPopup } from "./MentionPopup";
 import { useFileMention } from "@/hooks/useFileMention";
 import { useSendShortcut } from "@/hooks/useSendShortcut";
+import { SlashCommandPopup } from "./SlashCommandPopup";
+import type { SlashCommand, SkillInfo } from "./SlashCommandPopup";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -41,6 +43,7 @@ interface Props {
   soundEnabled?: boolean;
   onSoundToggle?: () => void;
   cwd?: string;
+  onSlashCommand?: (name: string) => void;
 }
 
 export interface ChatInputHandle {
@@ -70,6 +73,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   retryInfo,
   soundEnabled, onSoundToggle,
   cwd,
+  onSlashCommand,
 }: Props, ref) {
   const [value, setValue] = useState("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -77,7 +81,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+  const [slashSkills, setSlashSkills] = useState<SkillInfo[]>([]);
+  const slashOpenRef = useRef(false);
+  const slashSkillsLoadedRef = useRef(false);
+  const slashAnchorRef = useRef<HTMLDivElement>(null);
   const { sendShortcut } = useSendShortcut();
+
+  useEffect(() => { slashOpenRef.current = slashOpen; }, [slashOpen]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -191,13 +203,51 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const msg = value.trim();
     if (!msg && !attachedImages.length) return;
     if (isStreaming) return;
+
+    // 斜杠命令检测：消息以 / 开头时，识别命令名
+    if (msg.startsWith("/")) {
+      const spaceIdx = msg.indexOf(" ");
+      const cmdName = spaceIdx === -1 ? msg.slice(1) : msg.slice(1, spaceIdx);
+      // 内置命令（compact/export）拦截执行
+      const BUILTIN_COMMANDS = ["compact", "export"];
+      if (cmdName && BUILTIN_COMMANDS.includes(cmdName) && onSlashCommand) {
+        setValue("");
+        if (textareaRef.current) textareaRef.current.style.height = "auto";
+        onSlashCommand(cmdName);
+        return;
+      }
+      // 非内置命令（如 skill）作为普通消息发送
+    }
+
     onSend(msg, attachedImages.length ? attachedImages : undefined);
     setValue("");
     clearImages();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, attachedImages, isStreaming, onSend, clearImages]);
+  }, [value, attachedImages, isStreaming, onSend, clearImages, onSlashCommand]);
+
+  const handleSlashSelect = useCallback((cmd: SlashCommand) => {
+    setSlashOpen(false);
+    // 插入 /commandName 到输入框，光标停在末尾
+    const prefix = cmd.group === "skill" ? "/skill:" : "/";
+    const text = `${prefix}${cmd.name} `;
+    setValue(text);
+    const ta = textareaRef.current;
+    if (ta) {
+      requestAnimationFrame(() => {
+        ta.value = text;
+        ta.setSelectionRange(text.length, text.length);
+        ta.focus();
+        ta.style.height = "auto";
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      });
+    }
+  }, []);
+
+  const handleSlashClose = useCallback(() => {
+    setSlashOpen(false);
+  }, []);
 
   const sendQueued = useCallback((mode: "steer" | "followup") => {
     const msg = value.trim();
@@ -217,6 +267,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       // Let mention handle navigation keys when popup is active
       mention.handleKeyDown(e);
       if (e.defaultPrevented || mention.active) return;
+      if (slashOpenRef.current) return; // slash 面板打开时不发送消息
 
       if (e.key === "Enter" && !e.nativeEvent.isComposing) {
         const mod = e.metaKey || e.ctrlKey;
@@ -373,6 +424,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {/* Main input */}
         <div
           style={{
+            position: "relative",
             display: "flex",
             gap: 8,
             alignItems: "center",
@@ -390,8 +442,32 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             ref={textareaRef}
             value={value}
             onChange={(e) => {
-              setValue(e.target.value);
-              mention.onChange(e.target.value);
+              const newVal = e.target.value;
+              setValue(newVal);
+              mention.onChange(newVal);
+
+              // 斜杠命令检测：输入 / 开头时打开面板
+              if (newVal.startsWith("/")) {
+                const filter = newVal.slice(1);
+                if (!filter.includes(" ")) {
+                  setSlashFilter(filter);
+                  setSlashOpen(true);
+                  // 首次打开时加载 skills 列表
+                  if (!slashSkillsLoadedRef.current && cwd) {
+                    slashSkillsLoadedRef.current = true;
+                    fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`)
+                      .then((r) => r.json())
+                      .then((d: { skills?: SkillInfo[] }) => {
+                        if (d.skills) setSlashSkills(d.skills.filter((s) => !s.disableModelInvocation));
+                      })
+                      .catch(() => {});
+                  }
+                } else {
+                  setSlashOpen(false);
+                }
+              } else {
+                setSlashOpen(false);
+              }
             }}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
@@ -418,6 +494,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               overflow: "auto",
             }}
           />
+
+            {onSlashCommand && (
+              <SlashCommandPopup
+                open={slashOpen}
+                filter={slashFilter}
+                skills={slashSkills}
+                onSelect={handleSlashSelect}
+                onClose={handleSlashClose}
+                anchorRef={slashAnchorRef}
+              />
+            )}
 
           {/* @ File Mention Popup */}
           {cwd && mention.active && mention.matches.length > 0 && (

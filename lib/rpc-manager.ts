@@ -217,6 +217,16 @@ export class AgentSessionWrapper {
         return null;
       }
 
+      case "export_html": {
+        const result = await this.inner.exportToHtml();
+        return { path: result };
+      }
+
+      case "export_jsonl": {
+        const result = await this.inner.exportToJsonl();
+        return { path: result };
+      }
+
       case "set_auto_retry": {
         this.inner.setAutoRetryEnabled(command.enabled as boolean);
         return null;

@@ -3,11 +3,15 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
 import MermaidBlock from "./MermaidBlock";
+import { normalizeBlockMathDelimiters } from "@/lib/normalize-math";
 import type {
   AgentMessage,
   UserMessage,
@@ -527,11 +531,12 @@ function TextBlock({ block }: { block: TextContent }) {
   return (
     <div className="markdown-body">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkMath, remarkGfm]}
+        rehypePlugins={[rehypeKatex]}
         components={{
           code({ className, children, ...props }) {
             const lang = className?.replace("language-", "") ?? "";
-            const raw = String(children);
+            const raw = children != null ? String(children) : "";
             if (lang === "mermaid") {
               return <MermaidBlock code={raw.replace(/\n$/, "")} isDark={isDark} />;
             }
@@ -560,7 +565,7 @@ function TextBlock({ block }: { block: TextContent }) {
           },
         }}
       >
-        {block.text}
+        {normalizeBlockMathDelimiters(block.text)}
       </ReactMarkdown>
     </div>
   );
@@ -840,5 +845,4 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
     </div>
   );
 }
-
 
