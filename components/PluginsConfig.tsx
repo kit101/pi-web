@@ -559,11 +559,13 @@ export function PluginsConfig({
   sessionId,
   onClose,
   onReloaded,
+  embedded = false,
 }: {
   cwd: string;
   sessionId: string | null;
   onClose: () => void;
   onReloaded?: () => void;
+  embedded?: boolean;
 }) {
   const isMobile = useIsMobile();
   const [data, setData] = useState<PluginsResponse | null>(null);
@@ -694,34 +696,36 @@ export function PluginsConfig({
   return (
     <div
       style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.35)",
+        position: embedded ? undefined : "fixed",
+        inset: embedded ? undefined : 0,
+        zIndex: embedded ? undefined : 1000,
+        width: embedded ? "100%" : undefined,
+        height: embedded ? "100%" : undefined,
+        background: embedded ? undefined : "rgba(0,0,0,0.35)",
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: embedded ? undefined : "center",
+        justifyContent: embedded ? undefined : "center",
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (!embedded && e.target === e.currentTarget) onClose();
       }}
     >
       <div
         style={{
-          width: isMobile ? "calc(100vw - 16px)" : 860,
-          maxWidth: "calc(100vw - 16px)",
-          height: isMobile ? "calc(100dvh - 16px)" : "76vh",
-          maxHeight: "calc(100dvh - 16px)",
+          width: embedded ? "100%" : isMobile ? "calc(100vw - 16px)" : 860,
+          maxWidth: embedded ? "100%" : "calc(100vw - 16px)",
+          height: embedded ? "100%" : isMobile ? "calc(100dvh - 16px)" : "76vh",
+          maxHeight: embedded ? "100%" : "calc(100dvh - 16px)",
           background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
+          border: embedded ? "none" : "1px solid var(--border)",
+          borderRadius: embedded ? 0 : 8,
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+          boxShadow: embedded ? "none" : "0 8px 32px rgba(0,0,0,0.18)",
           overflow: "hidden",
         }}
       >
-        <div
+        {!embedded && <div
           style={{
             display: "flex",
             alignItems: "center",
@@ -762,7 +766,7 @@ export function PluginsConfig({
           >
             ×
           </button>
-        </div>
+        </div>}
 
         <div style={{ flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
           <div
@@ -1004,9 +1008,9 @@ export function PluginsConfig({
           <button onClick={() => void loadPlugins()} disabled={loading || busyKey !== null} style={buttonStyle(loading || busyKey !== null)}>
             Refresh
           </button>
-          <button onClick={onClose} style={buttonStyle(false)}>
+          {!embedded && <button onClick={onClose} style={buttonStyle(false)}>
             Close
-          </button>
+          </button>}
         </div>
       </div>
     </div>
