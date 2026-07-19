@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants, lstatSync, realpathSync } from "node:fs";
+import { accessSync, constants, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import path from "node:path";
 // @ts-expect-error Node's direct TypeScript tests require an explicit extension.
 import { KNOWN_EDITORS, type EditorId, type EditorSelection } from "./editor-config.ts";
@@ -100,18 +100,45 @@ function defaultIsFilePathAllowed(target: string, allowedRoots: Set<string>): bo
 function resolveCanonicalCandidate(filePath: string): string {
   let ancestor = path.resolve(filePath);
   const suffix: string[] = [];
+  const visitedSymlinks = new Set<string>();
 
   while (true) {
     try {
       return path.resolve(realpathSync(ancestor), ...suffix);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      if (code !== "ENOENT" && code !== "ENOTDIR" && code !== "ELOOP") throw error;
 
-      const parent = path.dirname(ancestor);
-      if (parent === ancestor) throw error;
-      suffix.unshift(path.basename(ancestor));
-      ancestor = parent;
+      let stat;
+      try {
+        stat = lstatSync(ancestor);
+      } catch (lstatError) {
+        const lstatCode = (lstatError as NodeJS.ErrnoException).code;
+        if (lstatCode !== "ENOENT" && lstatCode !== "ENOTDIR" && lstatCode !== "ELOOP") {
+          throw lstatError;
+        }
+
+        const parent = path.dirname(ancestor);
+        if (parent === ancestor) throw error;
+        suffix.unshift(path.basename(ancestor));
+        ancestor = parent;
+        continue;
+      }
+
+      if (!stat.isSymbolicLink()) throw error;
+      if (visitedSymlinks.has(ancestor)) {
+        const loopError = new Error("Too many symbolic links") as NodeJS.ErrnoException;
+        loopError.code = "ELOOP";
+        throw loopError;
+      }
+      visitedSymlinks.add(ancestor);
+
+      const linkTarget = readlinkSync(ancestor);
+      const resolvedTarget = path.isAbsolute(linkTarget)
+        ? linkTarget
+        : path.resolve(path.dirname(ancestor), linkTarget);
+      ancestor = path.resolve(resolvedTarget, ...suffix);
+      suffix.length = 0;
     }
   }
 }
