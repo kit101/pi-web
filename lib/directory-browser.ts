@@ -22,6 +22,18 @@ export interface DirectoryBrowserLocation {
   root: string;
 }
 
+export function buildDirectoryBrowserRoots(
+  home: string,
+  roots: Iterable<string>,
+  isAllowed: FilePathAllowedChecker = defaultIsFilePathAllowed,
+): string[] {
+  const homeRoots = new Set([home]);
+  return [
+    home,
+    ...[...roots].filter((root) => root && !isAllowed(root, homeRoots)),
+  ];
+}
+
 export class DirectoryBrowserError extends Error {
   readonly status: number;
 

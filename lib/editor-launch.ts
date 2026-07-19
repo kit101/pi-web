@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants, lstatSync, readlinkSync, realpathSync } from "node:fs";
+import { accessSync, constants, lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 // @ts-expect-error Node's direct TypeScript tests require an explicit extension.
 import { KNOWN_EDITORS, type EditorId, type EditorSelection } from "./editor-config.ts";
@@ -13,6 +13,11 @@ export interface EditorActionRequest {
 export interface EditorCommand {
   command: string;
   args: string[];
+}
+
+export interface FileManagerTarget {
+  path: string;
+  isDirectory: boolean;
 }
 
 type FilePathAllowedChecker = (target: string, allowedRoots: Set<string>) => boolean;
@@ -53,6 +58,27 @@ export function buildEditorCommand(
   const editor = KNOWN_EDITORS.find((candidate) => candidate.id === selection.id);
   if (!editor) throw new Error("Unknown editor");
   return { command: editor.command, args: [filePath] };
+}
+
+export function buildFileManagerCommand(
+  target: FileManagerTarget,
+  platform: NodeJS.Platform = process.platform,
+): EditorCommand {
+  if (platform === "darwin") {
+    return target.isDirectory
+      ? { command: "open", args: [target.path] }
+      : { command: "open", args: ["-R", target.path] };
+  }
+  if (platform === "win32") {
+    return target.isDirectory
+      ? { command: "explorer.exe", args: [target.path] }
+      : { command: "explorer.exe", args: [`/select,${target.path}`] };
+  }
+
+  return {
+    command: "xdg-open",
+    args: [target.isDirectory ? target.path : path.dirname(target.path)],
+  };
 }
 
 export function validateCustomExecutable(executablePath: string): string | null {
@@ -143,10 +169,10 @@ function resolveCanonicalCandidate(filePath: string): string {
   }
 }
 
-export function resolveAllowedEditorFile(
+function resolveAllowedCanonicalPath(
   filePath: string,
   roots: Set<string>,
-  isAllowed: FilePathAllowedChecker = defaultIsFilePathAllowed,
+  isAllowed: FilePathAllowedChecker,
 ): string {
   if (!isAllowed(filePath, roots)) throw new Error("Access denied");
 
@@ -161,6 +187,15 @@ export function resolveAllowedEditorFile(
 
   const canonicalCandidate = resolveCanonicalCandidate(filePath);
   if (!isAllowed(canonicalCandidate, realRoots)) throw new Error("Access denied");
+  return canonicalCandidate;
+}
+
+export function resolveAllowedEditorFile(
+  filePath: string,
+  roots: Set<string>,
+  isAllowed: FilePathAllowedChecker = defaultIsFilePathAllowed,
+): string {
+  resolveAllowedCanonicalPath(filePath, roots, isAllowed);
 
   const stat = lstatSync(filePath);
   if (stat.isSymbolicLink()) {
@@ -169,11 +204,23 @@ export function resolveAllowedEditorFile(
   if (!stat.isFile()) throw new Error("Editor target is not a file");
 
   const realFilePath = realpathSync(filePath);
-  if (!isAllowed(realFilePath, realRoots)) throw new Error("Access denied");
   return realFilePath;
 }
 
-export function launchEditor(command: string, args: string[]): Promise<void> {
+export function resolveAllowedFileManagerTarget(
+  filePath: string,
+  roots: Set<string>,
+  isAllowed: FilePathAllowedChecker = defaultIsFilePathAllowed,
+): FileManagerTarget {
+  const canonicalPath = resolveAllowedCanonicalPath(filePath, roots, isAllowed);
+  const stat = statSync(canonicalPath);
+  if (!stat.isFile() && !stat.isDirectory()) {
+    throw new Error("File manager target is not a file or directory");
+  }
+  return { path: canonicalPath, isDirectory: stat.isDirectory() };
+}
+
+export function launchDetachedCommand(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       shell: false,

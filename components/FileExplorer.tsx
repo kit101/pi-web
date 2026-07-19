@@ -29,6 +29,7 @@ interface Props {
   refreshKey?: number;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   onAtMentions?: (relativePaths: string[]) => void;
+  onRevealInFileManager?: (filePath: string) => void;
   onUploadBusyChange?: (busy: boolean) => void;
 }
 
@@ -133,6 +134,16 @@ function MentionIcon({ size = 11 }: { size?: number }) {
   );
 }
 
+function RevealInFileManagerIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+      <circle cx="14" cy="14" r="2.5" />
+      <path d="m16 16 2.5 2.5" />
+    </svg>
+  );
+}
+
 function DismissButton({ onClick, title }: { onClick: () => void; title: string }) {
   return (
     <button
@@ -159,6 +170,7 @@ function TreeNode({
   onOpenFile,
   onEditFile,
   onAtMention,
+  onRevealInFileManager,
   expandedPaths,
   onToggleExpanded,
   refreshToken,
@@ -170,6 +182,7 @@ function TreeNode({
   onOpenFile: (filePath: string, fileName: string) => void;
   onEditFile?: (filePath: string) => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
+  onRevealInFileManager?: (filePath: string) => void;
   expandedPaths: Set<string>;
   onToggleExpanded: (fullPath: string, open: boolean) => void;
   refreshToken: string;
@@ -274,21 +287,26 @@ function TreeNode({
         )}
         {onAtMention && hovered && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onAtMention(getRelativeFilePath(node.fullPath, cwd), node.isDir);
             }}
             title="Insert path into chat"
+            aria-label="Insert path into chat"
             style={{
               position: "absolute",
-              right: !node.isDir ? (onEditFile ? 56 : 28) : 4,
+              right: 4
+                + (!node.isDir ? 28 : 0)
+                + (onRevealInFileManager ? 28 : 0)
+                + (!node.isDir && onEditFile ? 28 : 0),
               top: "50%",
               transform: "translateY(-50%)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 4,
-              padding: "0 8px",
+              width: 24,
+              padding: 0,
               height: 20,
               background: "var(--bg-panel)",
               border: "1px solid var(--border)",
@@ -301,7 +319,6 @@ function TreeNode({
             }}
           >
             <MentionIcon />
-            mention
           </button>
         )}
         {onEditFile && hovered && !node.isDir && (
@@ -315,7 +332,7 @@ function TreeNode({
             aria-label="Open in editor"
             style={{
               position: "absolute",
-              right: 28,
+              right: onRevealInFileManager ? 60 : 32,
               top: "50%",
               transform: "translateY(-50%)",
               display: "flex",
@@ -336,6 +353,36 @@ function TreeNode({
               <path d="M10 14 21 3" />
               <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
             </svg>
+          </button>
+        )}
+        {onRevealInFileManager && hovered && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRevealInFileManager(node.fullPath);
+            }}
+            title="Show in file manager"
+            aria-label="Show in file manager"
+            style={{
+              position: "absolute",
+              right: node.isDir ? 4 : 32,
+              top: "50%",
+              transform: "translateY(-50%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              height: 20,
+              padding: 0,
+              background: "var(--bg-panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            <RevealInFileManagerIcon />
           </button>
         )}
         {hovered && !node.isDir && (
@@ -385,6 +432,7 @@ function TreeNode({
               onOpenFile={onOpenFile}
               onEditFile={onEditFile}
               onAtMention={onAtMention}
+              onRevealInFileManager={onRevealInFileManager}
               expandedPaths={expandedPaths}
               onToggleExpanded={onToggleExpanded}
               refreshToken={refreshToken}
@@ -411,6 +459,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   refreshKey,
   onAtMention,
   onAtMentions,
+  onRevealInFileManager,
   onUploadBusyChange,
 }, ref) {
   const [roots, setRoots] = useState<FileNode[]>([]);
@@ -575,7 +624,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "6px 8px", borderBottom: "1px solid var(--border)", fontSize: 11, lineHeight: 1.35, color: "#f87171" }}>
           <span style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{actionError}</span>
           {onDismissActionError && (
-            <DismissButton onClick={onDismissActionError} title="Dismiss editor error" />
+            <DismissButton onClick={onDismissActionError} title="Dismiss file action error" />
           )}
         </div>
       )}
@@ -674,10 +723,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                   onClick={addUploadedFilesToChat}
                   title={uploadSummary.uploaded.length === 1 ? "Add uploaded file to chat" : "Add all uploaded files to chat"}
                   aria-label={uploadSummary.uploaded.length === 1 ? "Add uploaded file to chat" : "Add all uploaded files to chat"}
-                  style={{ height: 22, padding: "0 7px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
+                  style={{ width: 24, height: 22, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer" }}
                 >
                   <MentionIcon />
-                  mention
                 </button>
               )}
               <DismissButton onClick={() => setUploadSummary(null)} title="Dismiss upload results" />
@@ -712,6 +760,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               onOpenFile={onOpenFile}
               onEditFile={onEditFile}
               onAtMention={onAtMention}
+              onRevealInFileManager={onRevealInFileManager}
               expandedPaths={expandedPaths}
               onToggleExpanded={handleToggleExpanded}
               refreshToken={refreshToken}

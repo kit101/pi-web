@@ -62,7 +62,7 @@ function EditorSettings() {
   const executable = knownEditor?.command ?? editorPath;
 
   return (
-    <div style={{ maxWidth: 620, padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
+    <section style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div>
         <h2 style={{ margin: 0, fontSize: 16, color: "var(--text)" }}>External editor</h2>
         <p style={{ margin: "6px 0 0", color: "var(--text-muted)", lineHeight: 1.5 }}>
@@ -118,7 +118,7 @@ function EditorSettings() {
           {executable || "Not configured"}
         </code>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -181,6 +181,8 @@ function GeneralSettings() {
           </label>
         ))}
       </section>
+
+      <EditorSettings />
     </div>
   );
 }
@@ -192,7 +194,7 @@ export function SettingsConfig({
   onPluginReloaded,
 }: SettingsConfigProps) {
   const isMobile = useIsMobile();
-  const [category, setCategory] = useState<SettingsCategory>("models");
+  const [category, setCategory] = useState<SettingsCategory>("general");
   const emptyState = getSettingsEmptyState(category, cwd);
 
   const content = (() => {
@@ -212,8 +214,6 @@ export function SettingsConfig({
             onReloaded={onPluginReloaded}
           />
         );
-      case "editor":
-        return <EditorSettings />;
       case "general":
         return <GeneralSettings />;
     }

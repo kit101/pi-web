@@ -1,19 +1,17 @@
 export type SettingsCategory =
+  | "general"
   | "models"
   | "skills"
-  | "plugins"
-  | "editor"
-  | "general";
+  | "plugins";
 
 export const SETTINGS_CATEGORIES: readonly {
   key: SettingsCategory;
   label: string;
 }[] = [
-  { key: "models", label: "Models" },
+  { key: "general", label: "General" },
+  { key: "models", label: "Model" },
   { key: "skills", label: "Skills" },
   { key: "plugins", label: "Plugins" },
-  { key: "editor", label: "Editor" },
-  { key: "general", label: "General" },
 ];
 
 export function getSettingsEmptyState(

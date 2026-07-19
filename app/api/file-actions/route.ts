@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { getAllowedFileRoots, isFilePathAllowed } from "@/lib/file-access";
 import {
   buildEditorCommand,
-  launchEditor,
+  buildFileManagerCommand,
+  launchDetachedCommand,
   parseEditorActionRequest,
   resolveAllowedEditorFile,
+  resolveAllowedFileManagerTarget,
   validateCustomExecutable,
 } from "@/lib/editor-launch";
 import type { EditorSelection } from "@/lib/editor-config";
@@ -35,10 +37,42 @@ export async function POST(req: Request) {
   }
 
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return errorResponse("Invalid editor action request", 400);
+    return errorResponse("Invalid file action request", 400);
   }
 
   const action = (body as Record<string, unknown>).action;
+  if (action === "reveal") {
+    const filePath = (body as Record<string, unknown>).filePath;
+    if (typeof filePath !== "string") {
+      return errorResponse("Invalid file action request", 400);
+    }
+
+    let roots: Set<string>;
+    try {
+      roots = await getAllowedFileRoots();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return errorResponse(`Failed to resolve allowed file roots: ${message}`, 500);
+    }
+
+    let target;
+    try {
+      target = resolveAllowedFileManagerTarget(filePath, roots, isFilePathAllowed);
+    } catch (error) {
+      return fileErrorResponse(error);
+    }
+
+    const command = buildFileManagerCommand(target);
+    try {
+      await launchDetachedCommand(command.command, command.args);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return errorResponse(`Failed to open file manager: ${message}`, 500);
+    }
+
+    return NextResponse.json({ success: true });
+  }
+
   if (action !== "edit") {
     return errorResponse("Unsupported file action", 400);
   }
@@ -82,7 +116,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    await launchEditor(editorCommand.command, editorCommand.args);
+    await launchDetachedCommand(editorCommand.command, editorCommand.args);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return errorResponse(`Failed to launch editor: ${message}`, 500);

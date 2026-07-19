@@ -1,6 +1,7 @@
 import { homedir } from "os";
 import { NextRequest, NextResponse } from "next/server";
 import {
+  buildDirectoryBrowserRoots,
   DirectoryBrowserError,
   getBrowsableParent,
   listBrowsableDirectories,
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     const allowedFileRoots = await getAllowedFileRoots();
     const location = resolveBrowsableDirectory(
       requestedPath ?? home,
-      [home, ...allowedFileRoots],
+      buildDirectoryBrowserRoots(home, allowedFileRoots, isFilePathAllowed),
       isFilePathAllowed,
     );
 
