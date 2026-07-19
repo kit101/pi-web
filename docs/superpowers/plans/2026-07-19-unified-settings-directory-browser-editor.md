@@ -1,6 +1,6 @@
 # Unified Settings, Directory Browser, and External Editor Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace the three sidebar configuration buttons with one unified Settings modal, restore a secure workspace directory browser, and make file-tree entries open in a configured external editor.
 
@@ -34,7 +34,7 @@
 - Preserve runtime behavior; this task is limited to callback placement and dependency stability.
 - Do not modify ESLint configuration or unrelated files.
 
-- [ ] **Step 1: Verify the focused lint failures**
+- [x] **Step 1: Verify the focused lint failures**
 
 Run:
 
@@ -44,11 +44,11 @@ node_modules/.bin/eslint components/ChatInput.tsx components/ChatMinimap.tsx
 
 Expected: nine `react-hooks/preserve-manual-memoization` errors. In `ChatInput`, inspect the callback referenced before declaration and unstable derived slash-command values. In `ChatMinimap`, inspect callbacks that capture mutable ref objects while reading `.current`.
 
-- [ ] **Step 2: Make the smallest behavior-preserving fixes**
+- [x] **Step 2: Make the smallest behavior-preserving fixes**
 
 Move the imperative-handle registration after the image-processing callback is declared, memoize only derived slash-command state that is used by memoized callbacks, and make minimap callback inputs explicit without changing scroll or measurement behavior.
 
-- [ ] **Step 3: Verify focused and full lint are GREEN**
+- [x] **Step 3: Verify focused and full lint are GREEN**
 
 Run:
 
@@ -59,7 +59,7 @@ npm run lint
 
 Expected: both commands pass with no errors.
 
-- [ ] **Step 4: Verify the regression suite**
+- [x] **Step 4: Verify the regression suite**
 
 Run:
 
@@ -70,7 +70,7 @@ node --test "$test_files[@]"
 
 Expected: all 92 baseline tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add components/ChatInput.tsx components/ChatMinimap.tsx
@@ -91,7 +91,7 @@ git commit -m "fix: restore hooks lint baseline"
 - Produces: `EditorId`, `EditorSelection`, `KNOWN_EDITORS`, `parseEditorId(value)`, `normalizeEditorPath(value)`, `isAbsoluteEditorExecutable(value)`, `isEditorSelectionReady(selection)`, and `useEditor()`.
 - Consumers: Settings Editor page, SessionSidebar file action, and server editor launcher.
 
-- [ ] **Step 1: Write failing editor configuration tests**
+- [x] **Step 1: Write failing editor configuration tests**
 
 Create `lib/editor-config.test.mjs` with assertions for valid known IDs, invalid-value fallback, path trimming, and custom-editor readiness:
 
@@ -123,7 +123,7 @@ test("custom editor paths are trimmed and required", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -133,7 +133,7 @@ node --test lib/editor-config.test.mjs
 
 Expected: FAIL because `lib/editor-config.ts` does not exist.
 
-- [ ] **Step 3: Implement the editor domain**
+- [x] **Step 3: Implement the editor domain**
 
 Create `lib/editor-config.ts` with this public shape:
 
@@ -177,7 +177,7 @@ export function isEditorSelectionReady(selection: EditorSelection): boolean {
 }
 ```
 
-- [ ] **Step 4: Add the shared localStorage hook**
+- [x] **Step 4: Add the shared localStorage hook**
 
 Create `hooks/useEditor.ts` following `hooks/useSendShortcut.ts`. Use keys `pi-editor` and `pi-editor-path`; both snapshots call `parseEditorId` or `normalizeEditorPath`, and both setters notify one module-level listener set. Return:
 
@@ -193,7 +193,7 @@ Create `hooks/useEditor.ts` following `hooks/useSendShortcut.ts`. Use keys `pi-e
 
 Update the Shared Config Pattern examples in `AGENTS.md` to include `hooks/useEditor.ts`.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run:
 
@@ -224,7 +224,7 @@ git commit -m "feat: add external editor configuration"
 - Consumes: `EditorSelection`, `KNOWN_EDITORS`, `getAllowedFileRoots()`, and `isFilePathAllowed()`.
 - Produces: `parseEditorActionRequest(value)`, `buildEditorCommand(selection, filePath)`, `resolveAllowedEditorFile(filePath, roots)`, `validateCustomExecutable(path)`, and POST `/api/file-actions`.
 
-- [ ] **Step 1: Write failing command and security tests**
+- [x] **Step 1: Write failing command and security tests**
 
 Create `lib/editor-launch.test.mjs`. Use `mkdtempSync`, `mkdirSync`, `writeFileSync`, `chmodSync`, and `symlinkSync` to assert:
 
@@ -253,13 +253,13 @@ test("editor targets cannot escape an allowed root through symlinks", () => {
 
 Also test that malformed bodies and unknown editor IDs return `null` from `parseEditorActionRequest`.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run `node --test lib/editor-launch.test.mjs`.
 
 Expected: FAIL because the launcher module is missing.
 
-- [ ] **Step 3: Implement validation and command construction**
+- [x] **Step 3: Implement validation and command construction**
 
 In `lib/editor-launch.ts`:
 
@@ -291,7 +291,7 @@ export function launchEditor(command: string, args: string[]): Promise<void> {
 }
 ```
 
-- [ ] **Step 4: Add the dedicated route**
+- [x] **Step 4: Add the dedicated route**
 
 Create `app/api/file-actions/route.ts`. POST accepts only action `edit`, parses the request with `parseEditorActionRequest`, resolves the target against current allowed roots, validates a custom executable when selected, builds the command, launches it, and returns `{ success: true }`.
 
@@ -304,7 +304,7 @@ Use these statuses:
 
 Do not modify `app/api/files/[...path]/route.ts`; its POST remains upload-only.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run:
 
@@ -336,7 +336,7 @@ git commit -m "feat: add secure editor launch API"
 - Consumes: `useEditor()`, POST `/api/file-actions`, and the existing file tree.
 - Produces: `buildEditorActionBody(filePath, selection)` and `FileExplorer` props `onEditFile`, `actionError`, and `onDismissActionError`.
 
-- [ ] **Step 1: Add a failing request-body test**
+- [x] **Step 1: Add a failing request-body test**
 
 Extend `lib/editor-config.test.mjs`:
 
@@ -359,11 +359,11 @@ test("editor action bodies preserve paths without building shell commands", () =
 
 Run the test and verify it fails because `buildEditorActionBody` is missing.
 
-- [ ] **Step 2: Implement the request builder**
+- [x] **Step 2: Implement the request builder**
 
 Add `buildEditorActionBody()` to `lib/editor-config.ts`. It returns the exact JSON object in the test and omits shell commands and argument arrays.
 
-- [ ] **Step 3: Add the file-row action**
+- [x] **Step 3: Add the file-row action**
 
 Extend `FileExplorer` and recursive `TreeNode` props with:
 
@@ -377,7 +377,7 @@ For hovered files, render an `Open in editor` button before the existing downloa
 
 Render `actionError` above the tree with `role="alert"` and a dismiss button, independently of upload progress/errors.
 
-- [ ] **Step 4: Wire the action in SessionSidebar**
+- [x] **Step 4: Wire the action in SessionSidebar**
 
 Use `useEditor()` in `SessionSidebar`. Keep `editorActionError` state and implement an async callback that:
 
@@ -388,7 +388,7 @@ Use `useEditor()` in `SessionSidebar`. Keep `editorActionError` state and implem
 
 Pass `onEditFile` only when `isEditorSelectionReady(editorSelection)` is true. Pass the error and dismiss callback to `FileExplorer`. Preserve upload refs, at-mention callbacks, refresh keys, and worktree behavior.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -420,7 +420,7 @@ git commit -m "feat: open workspace files in external editor"
 - Consumes: `homedir()` and `getAllowedFileRoots()`.
 - Produces: `DirectoryBrowserEntry`, `DirectoryBrowserLocation`, `resolveBrowsableDirectory(candidate, roots)`, `listBrowsableDirectories(directory)`, `getBrowsableParent(directory, root)`, and GET `/api/directories`.
 
-- [ ] **Step 1: Write failing containment and listing tests**
+- [x] **Step 1: Write failing containment and listing tests**
 
 Create temporary fixtures for a home root, an allowed external workspace, a normal child directory, a regular file, and a directory symlink escaping home. Assert:
 
@@ -446,13 +446,13 @@ test("parent navigation is clamped at the authorized root", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run `node --test lib/directory-browser.test.mjs`.
 
 Expected: FAIL because the domain module does not exist.
 
-- [ ] **Step 3: Implement the domain module**
+- [x] **Step 3: Implement the domain module**
 
 `resolveBrowsableDirectory()` must:
 
@@ -465,7 +465,7 @@ Expected: FAIL because the domain module does not exist.
 
 `listBrowsableDirectories()` uses `readdirSync(directory, { withFileTypes: true })`, keeps only `entry.isDirectory()`, filters the same ignored build/cache names used by the file API, and sorts by name. It does not follow symbolic links.
 
-- [ ] **Step 4: Add the directory route**
+- [x] **Step 4: Add the directory route**
 
 Create GET `/api/directories?path=<absolute path>`. Its roots are:
 
@@ -486,7 +486,7 @@ When `path` is absent, use `homedir()`. Return:
 
 Do not call `allowFileRoot(homedir())` and do not mutate `getAllowedFileRoots()`.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run:
 
@@ -515,7 +515,7 @@ git commit -m "feat: add secure workspace directory API"
 - Consumes: GET `/api/directories` and POST `/api/cwd/validate`.
 - Produces: `WorkspaceDirectoryBrowser({ onClose, onSelect })` and `getDirectoryBrowserKeyAction(input)`.
 
-- [ ] **Step 1: Write failing keyboard-action tests**
+- [x] **Step 1: Write failing keyboard-action tests**
 
 Extend `lib/directory-browser.test.mjs` to cover:
 
@@ -530,11 +530,11 @@ assert.deepEqual(getDirectoryBrowserKeyAction({ key: "Enter", modifier: false })
 
 Run the test and verify RED because the function is missing.
 
-- [ ] **Step 2: Implement the keyboard helper**
+- [x] **Step 2: Implement the keyboard helper**
 
 Add a discriminated union return type and the exact key mapping above. Return `null` for all other keys.
 
-- [ ] **Step 3: Implement WorkspaceDirectoryBrowser**
+- [x] **Step 3: Implement WorkspaceDirectoryBrowser**
 
 Create a fixed modal with z-index above Settings and the workspace dropdown. Props:
 
@@ -558,7 +558,7 @@ The component must:
 - remain open and show the validation error on failure;
 - use a single-column, full-width layout on mobile through `useIsMobile()`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -585,17 +585,17 @@ git commit -m "feat: add workspace directory browser"
 - Consumes: `WorkspaceDirectoryBrowser`.
 - Produces: a `Browse directories…` workspace action while retaining `Custom path…` and desktop `selectDirectory()` behavior.
 
-- [ ] **Step 1: Add directory-browser integration state**
+- [x] **Step 1: Add directory-browser integration state**
 
 Add one `directoryBrowserOpen` boolean. Do not copy the dev browser's path, entry, breadcrumb, animation, or keyboard state into SessionSidebar.
 
-- [ ] **Step 2: Add the workspace action**
+- [x] **Step 2: Add the workspace action**
 
 Between `Use default directory` and `Custom path…`, add a `Browse directories…` button. It stops dropdown event propagation and opens `WorkspaceDirectoryBrowser`.
 
 Keep the existing `Custom path…` handler unchanged so desktop builds still use `window.piDesktop.selectDirectory()` and browsers still show validated text input.
 
-- [ ] **Step 3: Handle selection and close behavior**
+- [x] **Step 3: Handle selection and close behavior**
 
 Render `WorkspaceDirectoryBrowser` next to the sidebar root. On selection:
 
@@ -610,7 +610,7 @@ setDirectoryBrowserOpen(false);
 
 On close, change only `directoryBrowserOpen` so the underlying workspace dropdown remains usable.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run directory tests, lint, and source typecheck. Expected: all pass.
 
@@ -635,7 +635,7 @@ git commit -m "feat: browse workspace directories from sidebar"
 - Produces: `SettingsCategory`, `SETTINGS_CATEGORIES`, `getSettingsEmptyState(category, cwd)`, embedded props on three upstream panels, and `SettingsConfig`.
 - Consumes: `useTheme`, `useSendShortcut`, `useEditor`, and existing upstream config components.
 
-- [ ] **Step 1: Write failing category tests**
+- [x] **Step 1: Write failing category tests**
 
 Create `lib/settings.test.mjs`:
 
@@ -657,11 +657,11 @@ test("only workspace-scoped categories show an empty state without cwd", () => {
 
 Run the test and verify RED because `lib/settings.ts` is missing.
 
-- [ ] **Step 2: Implement settings categories**
+- [x] **Step 2: Implement settings categories**
 
 Create the exact ordered category definitions and return `Select a workspace to manage skills.` or `Select a workspace to manage plugins.` only for the two cwd-scoped categories.
 
-- [ ] **Step 3: Add presentation-only embedded props**
+- [x] **Step 3: Add presentation-only embedded props**
 
 Add `embedded?: boolean` to Models, Skills, and Plugins props.
 
@@ -677,7 +677,7 @@ For each component:
 
 Do not move fetch, save, install, update, OAuth, API-key, or reload logic into SettingsConfig.
 
-- [ ] **Step 4: Build SettingsConfig**
+- [x] **Step 4: Build SettingsConfig**
 
 Create props:
 
@@ -699,7 +699,7 @@ The modal has one header, category navigation, and one content area. Desktop nav
 
 Changing categories must not remount the Settings shell. Clicking the backdrop or × closes it.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -728,7 +728,7 @@ git commit -m "feat: add unified settings panel"
 - Consumes: `SettingsConfig` and every completed task.
 - Produces: one sidebar Settings entry and the final verified feature set.
 
-- [ ] **Step 1: Replace separate modal state and sidebar buttons**
+- [x] **Step 1: Replace separate modal state and sidebar buttons**
 
 In AppShell:
 
@@ -741,7 +741,7 @@ In AppShell:
 
 Keep `modelsRefreshKey`, theme quick access, send-shortcut quick access, and plugin `sessionKey` invalidation.
 
-- [ ] **Step 2: Update project documentation**
+- [x] **Step 2: Update project documentation**
 
 Add these entries to AGENTS.md:
 
@@ -755,7 +755,7 @@ hooks/useEditor.ts                 shared external-editor preference
 
 Document that directory browsing home does not authorize home for file reads and that custom editors are absolute executables launched without a shell.
 
-- [ ] **Step 3: Run the full Node test set**
+- [x] **Step 3: Run the full Node test set**
 
 Run:
 
@@ -766,7 +766,7 @@ node --test "$test_files[@]"
 
 Expected: every test passes.
 
-- [ ] **Step 4: Run source-only TypeScript verification**
+- [x] **Step 4: Run source-only TypeScript verification**
 
 Because the running dev server owns `.next`, create `tsconfig.verify.json` with `apply_patch`:
 
@@ -787,7 +787,7 @@ node_modules/.bin/tsc --noEmit -p tsconfig.verify.json
 
 Expected: exit 0. Delete the temporary config with `apply_patch` immediately afterward.
 
-- [ ] **Step 5: Run lint, diff, and repository checks**
+- [x] **Step 5: Run lint, diff, and repository checks**
 
 Run:
 
@@ -800,15 +800,15 @@ git status --short
 
 Expected: lint exits 0, no conflict markers or whitespace errors exist, and only task changes plus the pre-existing untracked files are present.
 
-- [ ] **Step 6: Perform browser validation**
+- [x] **Step 6: Perform browser validation**
 
 Use the Browser skill against `http://localhost:30141`. Verify the scenarios listed in the design spec: five Settings categories, cwd empty states, directory mouse/keyboard navigation, normalized selection, editor error feedback, and mobile layouts. If no browser backend is available, record this as an explicit unverified manual check rather than substituting source inspection.
 
-- [ ] **Step 7: Request code review and fix blocking findings**
+- [x] **Step 7: Request code review and fix blocking findings**
 
 Review `git diff` against the design spec. Critical and Important findings must be fixed with a failing regression test before the final commit.
 
-- [ ] **Step 8: Mark the plan complete and commit**
+- [x] **Step 8: Mark the plan complete and commit**
 
 Change completed plan checkboxes to `[x]`, stage only the exact tracked/new task paths, verify the pre-existing untracked list is unchanged, and commit:
 
