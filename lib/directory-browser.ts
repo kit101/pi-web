@@ -65,6 +65,9 @@ function normalizeCandidate(candidate: string): string {
   if (!candidate) {
     throw new DirectoryBrowserError("Path is required", 400);
   }
+  if (candidate.includes("\0")) {
+    throw new DirectoryBrowserError("Path contains an invalid character", 400);
+  }
   if (!path.isAbsolute(candidate)) {
     throw new DirectoryBrowserError("Path must be absolute", 400);
   }
@@ -144,7 +147,15 @@ export function resolveBrowsableDirectory(
     throw new DirectoryBrowserError("Access denied", 403);
   }
 
-  const canonicalCandidate = resolveCanonicalCandidate(normalizedCandidate);
+  let canonicalCandidate: string;
+  try {
+    canonicalCandidate = resolveCanonicalCandidate(normalizedCandidate);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+      throw new DirectoryBrowserError("Invalid directory path: symbolic link loop", 400);
+    }
+    throw error;
+  }
   if (!isAllowed(canonicalCandidate, realRoots)) {
     throw new DirectoryBrowserError("Access denied", 403);
   }
