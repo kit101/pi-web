@@ -23,6 +23,9 @@ interface FileNode {
 interface Props {
   cwd: string;
   onOpenFile: (filePath: string, fileName: string) => void;
+  onEditFile?: (filePath: string) => void;
+  actionError?: string | null;
+  onDismissActionError?: () => void;
   refreshKey?: number;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   onAtMentions?: (relativePaths: string[]) => void;
@@ -154,6 +157,7 @@ function TreeNode({
   depth,
   cwd,
   onOpenFile,
+  onEditFile,
   onAtMention,
   expandedPaths,
   onToggleExpanded,
@@ -164,6 +168,7 @@ function TreeNode({
   depth: number;
   cwd: string;
   onOpenFile: (filePath: string, fileName: string) => void;
+  onEditFile?: (filePath: string) => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   expandedPaths: Set<string>;
   onToggleExpanded: (fullPath: string, open: boolean) => void;
@@ -276,7 +281,7 @@ function TreeNode({
             title="Insert path into chat"
             style={{
               position: "absolute",
-              right: !node.isDir ? 28 : 4,
+              right: !node.isDir ? (onEditFile ? 56 : 28) : 4,
               top: "50%",
               transform: "translateY(-50%)",
               display: "flex",
@@ -297,6 +302,40 @@ function TreeNode({
           >
             <MentionIcon />
             mention
+          </button>
+        )}
+        {onEditFile && hovered && !node.isDir && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditFile(node.fullPath);
+            }}
+            title="Open in editor"
+            aria-label="Open in editor"
+            style={{
+              position: "absolute",
+              right: 28,
+              top: "50%",
+              transform: "translateY(-50%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              height: 20,
+              padding: 0,
+              background: "var(--bg-panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 3h7v7" />
+              <path d="M10 14 21 3" />
+              <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+            </svg>
           </button>
         )}
         {hovered && !node.isDir && (
@@ -344,6 +383,7 @@ function TreeNode({
               depth={depth + 1}
               cwd={cwd}
               onOpenFile={onOpenFile}
+              onEditFile={onEditFile}
               onAtMention={onAtMention}
               expandedPaths={expandedPaths}
               onToggleExpanded={onToggleExpanded}
@@ -365,6 +405,9 @@ function TreeNode({
 export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileExplorer({
   cwd,
   onOpenFile,
+  onEditFile,
+  actionError,
+  onDismissActionError,
   refreshKey,
   onAtMention,
   onAtMentions,
@@ -528,6 +571,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   return (
     <div style={{ minHeight: "100%" }}>
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
+      {actionError && (
+        <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "6px 8px", borderBottom: "1px solid var(--border)", fontSize: 11, lineHeight: 1.35, color: "#f87171" }}>
+          <span style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{actionError}</span>
+          {onDismissActionError && (
+            <DismissButton onClick={onDismissActionError} title="Dismiss editor error" />
+          )}
+        </div>
+      )}
       {showUploadFeedback && (
         <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
         {uploadBusy && (
@@ -659,6 +710,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               depth={0}
               cwd={cwd}
               onOpenFile={onOpenFile}
+              onEditFile={onEditFile}
               onAtMention={onAtMention}
               expandedPaths={expandedPaths}
               onToggleExpanded={handleToggleExpanded}

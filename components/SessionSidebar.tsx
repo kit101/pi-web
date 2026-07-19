@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, type CSSProperties, type ReactNode } from "react";
+import { useEditor } from "@/hooks/useEditor";
+import { buildEditorActionBody, isEditorSelectionReady } from "@/lib/editor-config";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 
@@ -320,6 +322,7 @@ function PiAgentTitle() {
 }
 
 export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onAtMention, onAtMentions }: Props) {
+  const { editorSelection } = useEditor();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -347,6 +350,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [explorerKey, setExplorerKey] = useState(0);
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
+  const [editorActionError, setEditorActionError] = useState<string | null>(null);
   const [sessionRefreshDone, setSessionRefreshDone] = useState(false);
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
@@ -358,6 +362,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileExplorerRef = useRef<FileExplorerHandle>(null);
+
+  const handleEditFile = useCallback(async (filePath: string) => {
+    if (!isEditorSelectionReady(editorSelection)) return;
+
+    setEditorActionError(null);
+    try {
+      const res = await fetch("/api/file-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildEditorActionBody(filePath, editorSelection)),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) {
+        setEditorActionError(data.error ?? `Failed to open editor (HTTP ${res.status})`);
+      }
+    } catch (editFailure) {
+      setEditorActionError(editFailure instanceof Error ? editFailure.message : String(editFailure));
+    }
+  }, [editorSelection]);
 
   const loadSessions = useCallback(async (showLoading = false) => {
     try {
@@ -1601,6 +1624,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 ref={fileExplorerRef}
                 cwd={selectedCwd ?? selectedCwdProp!}
                 onOpenFile={onOpenFile ?? (() => {})}
+                onEditFile={isEditorSelectionReady(editorSelection) ? handleEditFile : undefined}
+                actionError={editorActionError}
+                onDismissActionError={() => setEditorActionError(null)}
                 refreshKey={explorerKey}
                 onAtMention={onAtMention}
                 onAtMentions={onAtMentions}

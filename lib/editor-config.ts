@@ -15,6 +15,13 @@ export interface EditorSelection {
   executablePath: string;
 }
 
+export interface EditorActionBody {
+  action: "edit";
+  filePath: string;
+  editorId: EditorId;
+  customExecutable: string;
+}
+
 const EDITOR_IDS = new Set<string>([
   ...KNOWN_EDITORS.map((editor) => editor.id),
   "custom",
@@ -34,4 +41,16 @@ export function isAbsoluteEditorExecutable(value: string): boolean {
 
 export function isEditorSelectionReady(selection: EditorSelection): boolean {
   return selection.id !== "custom" || isAbsoluteEditorExecutable(selection.executablePath);
+}
+
+export function buildEditorActionBody(
+  filePath: string,
+  selection: EditorSelection,
+): EditorActionBody {
+  return {
+    action: "edit",
+    filePath,
+    editorId: selection.id,
+    customExecutable: selection.executablePath,
+  };
 }
