@@ -8,9 +8,10 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { FolderIcon } from "@/components/FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { getDirectoryBrowserKeyAction } from "@/lib/directory-browser";
+import { getDirectoryBrowserKeyAction } from "@/lib/directory-browser-keyboard";
 
 interface WorkspaceDirectoryBrowserProps {
   onClose: () => void;
@@ -217,8 +218,9 @@ export function WorkspaceDirectoryBrowser({
   }, [confirmCurrentDirectory, loadDirectory, location, moveSelection, onClose, selectedIndex]);
 
   const retryPath = pathInput.trim() || undefined;
+  if (typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       style={{
         position: "fixed",
@@ -613,6 +615,7 @@ export function WorkspaceDirectoryBrowser({
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
