@@ -12,6 +12,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
 import MermaidBlock from "./MermaidBlock";
 import { normalizeBlockMathDelimiters } from "@/lib/normalize-math";
+import { getAssistantStatusText } from "@/lib/assistant-status";
 import type {
   AgentMessage,
   UserMessage,
@@ -301,6 +302,11 @@ function AssistantMessageView({
 }) {
   const time = showTimestamp ? formatTime(message.timestamp) : null;
   const blocks = message.content ?? [];
+  const statusText = getAssistantStatusText(
+    message.stopReason,
+    message.errorMessage,
+    blocks.some((block) => block.type === "toolCall"),
+  );
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const streamStartRef = useRef<number | null>(null);
@@ -459,6 +465,19 @@ function AssistantMessageView({
         {blocks.map((block, i) => (
           <BlockView key={i} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(i) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} />
         ))}
+        {statusText && (
+          <div
+            style={{
+              color: "#f87171",
+              fontSize: 14,
+              lineHeight: 1.6,
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {statusText}
+          </div>
+        )}
       </div>
 
       <div style={{
@@ -845,4 +864,3 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
     </div>
   );
 }
-
