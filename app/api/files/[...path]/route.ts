@@ -1,7 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { listAllSessions } from "@/lib/session-reader";
+import {
+  getAllowedFileRoots,
+  isFilePathAllowed,
+  isWindowsAbsolutePath,
+  normalizeSlashes,
+} from "@/lib/file-access";
+import {
+  DOCX_PREVIEW_MAX_BYTES,
+  IMAGE_PREVIEW_MAX_BYTES,
+  TEXT_PREVIEW_MAX_BYTES,
+  documentPreviewKind,
+  getAudioMime,
+  getDocumentMime,
+  getFileExt,
+  getImageMime,
+} from "@/lib/file-types";
+import { resolveDirentIsDirectory } from "@/lib/file-dirent";
+import { isFilePathReferencedBySession } from "@/lib/session-file-references";
+import {
+  inspectUploadTargets,
+  parseUploadConflictStrategy,
+  validateUploadFileNames,
+} from "@/lib/file-upload";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -11,46 +33,9 @@ const IGNORED_NAMES = new Set([
 
 const IGNORED_SUFFIXES = [".pyc"];
 
-const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
-const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
-
-const IMAGE_EXT_TO_MIME: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  svg: "image/svg+xml",
-  bmp: "image/bmp",
-  ico: "image/x-icon",
-  avif: "image/avif",
-};
-
-const AUDIO_EXT_TO_MIME: Record<string, string> = {
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  ogg: "audio/ogg",
-  oga: "audio/ogg",
-  opus: "audio/ogg",
-  m4a: "audio/mp4",
-  aac: "audio/aac",
-  flac: "audio/flac",
-  weba: "audio/webm",
-  webm: "audio/webm",
-};
-
-function getExt(filePath: string): string {
-  const ext = path.basename(filePath).toLowerCase().split(".").pop() ?? "";
-  return ext;
-}
-
-function getImageMime(filePath: string): string | null {
-  return IMAGE_EXT_TO_MIME[getExt(filePath)] ?? null;
-}
-
-function getAudioMime(filePath: string): string | null {
-  return AUDIO_EXT_TO_MIME[getExt(filePath)] ?? null;
-}
+const FILE_REQUEST_TYPES = ["list", "read", "download", "meta", "preview", "watch"] as const;
+type FileRequestType = typeof FILE_REQUEST_TYPES[number];
+const FILE_REQUEST_TYPE_SET = new Set<string>(FILE_REQUEST_TYPES);
 
 const EXT_TO_LANGUAGE: Record<string, string> = {
   ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
@@ -64,6 +49,7 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   sql: "sql", graphql: "graphql", gql: "graphql",
   dockerfile: "dockerfile", tf: "hcl", hcl: "hcl",
   env: "bash", gitignore: "bash", txt: "text",
+  pdf: "pdf", docx: "word",
 };
 
 function getLanguage(filePath: string): string {
@@ -76,25 +62,6 @@ function getLanguage(filePath: string): string {
   return EXT_TO_LANGUAGE[ext] ?? "text";
 }
 
-// Short-TTL cache for the allowed-roots set. Without this, every file list/read
-// request re-scans every pi session on disk just to check access. 5s is short
-// enough that newly-created cwds appear promptly; stored on globalThis so it
-// survives Next.js hot-reload.
-declare global {
-  var __piAllowedRootsCache: { roots: Set<string>; expiresAt: number } | undefined;
-}
-
-const ALLOWED_ROOTS_TTL_MS = 5_000;
-const WINDOWS_ABSOLUTE_RE = /^[a-zA-Z]:[\\/]/;
-
-function normalizeSlashes(filePath: string): string {
-  return filePath.replace(/\\/g, "/");
-}
-
-function isWindowsAbsolutePath(filePath: string): boolean {
-  return WINDOWS_ABSOLUTE_RE.test(filePath) || filePath.startsWith("\\\\") || filePath.startsWith("//");
-}
-
 function filePathFromSegments(segments: string[]): string {
   const joined = segments.join("/");
   const slashJoined = normalizeSlashes(joined);
@@ -102,49 +69,151 @@ function filePathFromSegments(segments: string[]): string {
   return "/" + joined.replace(/^\/+/, "");
 }
 
-async function getAllowedRoots(): Promise<Set<string>> {
-  const now = Date.now();
-  const cached = globalThis.__piAllowedRootsCache;
-  if (cached && cached.expiresAt > now) return cached.roots;
-
-  const sessions = await listAllSessions();
-  const roots = new Set<string>();
-  for (const s of sessions) {
-    if (s.cwd) roots.add(s.cwd);
-  }
-  // Also allow ~/.pi/default-workspace/<YYYYMMDD> created by the default-cwd endpoint
-  const home = (await import("os")).homedir();
-  const { readdirSync } = await import("fs");
-  try {
-    const wsDir = path.join(home, ".pi", "default-workspace");
-    for (const name of readdirSync(wsDir)) {
-      if (/^\d{8}$/.test(name)) {
-        roots.add(path.join(wsDir, name));
-      }
-    }
-  } catch {
-    // ignore if dir doesn't exist or is unreadable
-  }
-
-  globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
-  return roots;
+function parseFileRequestType(value: string): FileRequestType | null {
+  return FILE_REQUEST_TYPE_SET.has(value) ? (value as FileRequestType) : null;
 }
 
-function isPathAllowed(target: string, allowedRoots: Set<string>): boolean {
+async function getUploadDirectory(segments: string[]): Promise<
+  { directory: string } | { response: NextResponse }
+> {
+  const directory = filePathFromSegments(segments);
+  const allowedRoots = await getAllowedFileRoots();
+  if (!isFilePathAllowed(directory, allowedRoots)) {
+    return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
+  }
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(directory);
+  } catch {
+    return { response: NextResponse.json({ error: "Upload directory not found" }, { status: 404 }) };
+  }
+  if (!stat.isDirectory()) {
+    return { response: NextResponse.json({ error: "Upload target is not a directory" }, { status: 400 }) };
+  }
+
+  // A browsable directory can be a symlink. Resolve both sides before writes
+  // so a symlink inside an allowed root cannot redirect uploads outside it.
+  const realDirectory = fs.realpathSync(directory);
+  const realRoots = new Set<string>();
   for (const root of allowedRoots) {
-    const useWindowsRules = isWindowsAbsolutePath(target) || isWindowsAbsolutePath(root);
-    const resolver = useWindowsRules ? path.win32 : path;
-    const sep = useWindowsRules ? "\\" : path.sep;
-    const normalized = resolver.resolve(target);
-    const normalizedRoot = resolver.resolve(root);
-    const comparable = useWindowsRules ? normalized.toLowerCase() : normalized;
-    const comparableRoot = useWindowsRules ? normalizedRoot.toLowerCase() : normalizedRoot;
-    const rootWithSep = comparableRoot.endsWith(sep) ? comparableRoot : comparableRoot + sep;
-    if (comparable === comparableRoot || comparable.startsWith(rootWithSep)) {
-      return true;
+    try {
+      realRoots.add(fs.realpathSync(root));
+    } catch {
+      // Ignore stale session roots that no longer exist.
     }
   }
-  return false;
+  if (!isFilePathAllowed(realDirectory, realRoots)) {
+    return { response: NextResponse.json({ error: "Access denied" }, { status: 403 }) };
+  }
+
+  return { directory: realDirectory };
+}
+
+function parseUploadFileNames(value: unknown): string[] | null {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null;
+  return value;
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  try {
+    const { path: segments } = await params;
+    const uploadDirectory = await getUploadDirectory(segments);
+    if ("response" in uploadDirectory) return uploadDirectory.response;
+    const { directory } = uploadDirectory;
+    const type = request.nextUrl.searchParams.get("type") ?? "upload";
+
+    if (type === "upload-check") {
+      const body = await request.json().catch(() => null) as { fileNames?: unknown } | null;
+      const fileNames = parseUploadFileNames(body?.fileNames);
+      if (!fileNames) {
+        return NextResponse.json({ error: "fileNames must be an array of strings" }, { status: 400 });
+      }
+      const validationError = validateUploadFileNames(fileNames);
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 });
+      }
+      return NextResponse.json(inspectUploadTargets(directory, fileNames));
+    }
+
+    if (type !== "upload") {
+      return NextResponse.json({ error: "Invalid upload request type" }, { status: 400 });
+    }
+
+    const strategy = parseUploadConflictStrategy(request.nextUrl.searchParams.get("conflict"));
+    if (!strategy) {
+      return NextResponse.json({ error: "Invalid conflict strategy" }, { status: 400 });
+    }
+
+    const formData = await request.formData();
+    const files = formData.getAll("files").filter((entry): entry is File => typeof entry !== "string");
+    const fileNames = files.map((file) => file.name);
+    const validationError = validateUploadFileNames(fileNames);
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 });
+    }
+
+    const inspection = inspectUploadTargets(directory, fileNames);
+    if (strategy === "error" && inspection.conflicts.length > 0) {
+      return NextResponse.json({
+        error: "One or more files already exist",
+        conflicts: inspection.conflicts,
+        nonReplaceable: inspection.nonReplaceable,
+      }, { status: 409 });
+    }
+
+    const conflictSet = new Set(inspection.conflicts);
+    const nonReplaceableSet = new Set(inspection.nonReplaceable);
+    const uploaded: string[] = [];
+    const skipped: string[] = [];
+    const errors: Array<{ name: string; error: string }> = [];
+
+    for (const file of files) {
+      const destination = path.join(directory, file.name);
+      if (conflictSet.has(file.name) && strategy === "skip") {
+        skipped.push(file.name);
+        continue;
+      }
+      if (conflictSet.has(file.name) && nonReplaceableSet.has(file.name)) {
+        errors.push({ name: file.name, error: "Cannot replace a directory or symbolic link" });
+        continue;
+      }
+
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(await file.arrayBuffer());
+      } catch (error) {
+        errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
+        continue;
+      }
+
+      if (conflictSet.has(file.name)) {
+        try {
+          fs.unlinkSync(destination);
+        } catch (error) {
+          errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
+          continue;
+        }
+      }
+
+      try {
+        fs.writeFileSync(destination, bytes, { flag: "wx" });
+        uploaded.push(file.name);
+      } catch (error) {
+        errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    return NextResponse.json(
+      { uploaded, skipped, errors },
+      { status: errors.length > 0 ? 207 : 200 },
+    );
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
 }
 
 function createFileBodyStream(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {
@@ -188,11 +257,25 @@ function createFileBodyStream(filePath: string, range?: { start: number; end: nu
   });
 }
 
-function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null): Response {
+function encodeHeaderValue(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (ch) =>
+    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
+function getContentDisposition(filePath: string, asDownload = false): string {
+  const disposition = asDownload ? "attachment" : "inline";
+  const fileName = path.basename(filePath);
+  const fallback = fileName.replace(/[^\x20-\x7E]|["\\;\r\n]/g, "_") || "download";
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
+}
+
+function streamFile(filePath: string, stat: fs.Stats, contentType: string, rangeHeader: string | null, asDownload = false): Response {
   const headers = {
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
     "Accept-Ranges": "bytes",
+    "Content-Disposition": getContentDisposition(filePath, asDownload),
   };
 
   if (!rangeHeader) {
@@ -245,126 +328,62 @@ function streamFile(filePath: string, stat: fs.Stats, contentType: string, range
   });
 }
 
-import { spawn } from "child_process";
-
-function spawnAsync(command: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { shell: false });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0) reject(new Error(`Command exited with code ${code}`));
-      else resolve();
-    });
-  });
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
-function detectPlatform(): "darwin" | "win32" | "linux" | "other" {
-  if (process.platform === "darwin") return "darwin";
-  if (process.platform === "win32") return "win32";
-  if (process.platform === "linux") return "linux";
-  return "other";
-}
-
-/** Open a path in the system file manager (Finder / Explorer / xdg-open) */
-async function revealPath(targetPath: string, isDirectory: boolean): Promise<void> {
-  const platform = detectPlatform();
-  if (platform === "darwin") {
-    // `open -R` reveals the item in Finder; works for both files and dirs
-    await spawnAsync("open", ["-R", targetPath]);
-  } else if (platform === "win32") {
-    if (isDirectory) {
-      await spawnAsync("explorer", [targetPath]);
-    } else {
-      // /select opens Explorer with the file highlighted
-      await spawnAsync("explorer", ["/select,", targetPath]);
-    }
-  } else {
-    await spawnAsync("xdg-open", [targetPath]);
+function wrapDocxPreviewHtml(bodyHtml: string, fileName: string): string {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; min-height: 100%; background: #eef1f5; color: #171717; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 28px; }
+  main {
+    box-sizing: border-box;
+    max-width: 840px;
+    min-height: calc(100vh - 56px);
+    margin: 0 auto;
+    padding: 56px 64px;
+    background: #fff;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
   }
-}
-
-const EDITOR_COMMANDS: Record<string, (file: string) => { cmd: string; args: string[] }> = {
-  cursor: (f) => ({ cmd: "cursor", args: [f] }),
-  sublime: (f) => ({ cmd: "subl", args: [f] }),
-  code: (f) => ({ cmd: "code", args: [f] }),
-  vscode: (f) => ({ cmd: "code", args: [f] }),
-  webstorm: (f) => ({ cmd: "webstorm", args: [f] }),
-  vim: (f) => ({ cmd: "vim", args: [f] }),
-  nvim: (f) => ({ cmd: "nvim", args: [f] }),
-};
-
-/** Open a file in the user's preferred external editor */
-async function editPath(targetPath: string, preferredEditor?: string): Promise<void> {
-  const envEditor = process.env.PI_EDITOR?.toLowerCase();
-
-  // Priority: env var > preferredEditor param > auto-detect
-  const toTry = [];
-  if (envEditor) toTry.push(envEditor);
-  if (preferredEditor) toTry.push(preferredEditor.toLowerCase());
-  if (!envEditor && !preferredEditor) {
-    // Auto-detect: try all known editors
-    toTry.push(...Object.keys(EDITOR_COMMANDS));
+  .file-title {
+    margin: 0 0 28px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #6b7280;
+    font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-word;
   }
-
-  // Deduplicate while preserving order
-  const unique = [...new Set(toTry)];
-
-  for (const editor of unique) {
-    const cmdFn = EDITOR_COMMANDS[editor];
-    if (!cmdFn) continue;
-    try {
-      const { cmd, args } = cmdFn(targetPath);
-      await spawnAsync(cmd, args);
-      return;
-    } catch {
-      continue;
-    }
+  h1, h2, h3, h4, h5, h6 { line-height: 1.3; margin: 1.1em 0 0.45em; color: #111827; }
+  p { margin: 0.65em 0; line-height: 1.7; }
+  table { border-collapse: collapse; max-width: 100%; margin: 1em 0; }
+  th, td { border: 1px solid #d1d5db; padding: 6px 9px; vertical-align: top; }
+  img { max-width: 100%; height: auto; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  a { color: #2563eb; }
+  @media (max-width: 720px) {
+    body { padding: 0; background: #fff; }
+    main { min-height: 100vh; padding: 28px 22px; box-shadow: none; }
   }
-
-  // Fallback: open with default app
-  await revealPath(targetPath, false);
-}
-
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  try {
-    const { path: segments } = await params;
-    const filePath = filePathFromSegments(segments);
-    const body = await request.json();
-    const action = body.action as string;
-
-    if (!action || !["reveal", "edit"].includes(action)) {
-      return NextResponse.json({ error: "Invalid action. Use 'reveal' or 'edit'." }, { status: 400 });
-    }
-
-    const allowedRoots = await getAllowedRoots();
-    if (!isPathAllowed(filePath, allowedRoots)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
-    let stat: fs.Stats;
-    try {
-      stat = fs.statSync(filePath);
-    } catch {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    if (action === "reveal") {
-      await revealPath(filePath, stat.isDirectory());
-      return NextResponse.json({ success: true });
-    }
-
-    if (action === "edit") {
-      await editPath(filePath, body.editor);
-      return NextResponse.json({ success: true });
-    }
-
-    return NextResponse.json({ error: "Unexpected action" }, { status: 500 });
-  } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
-  }
+</style>
+</head>
+<body>
+<main>
+<div class="file-title">${escapeHtml(fileName)}</div>
+${bodyHtml}
+</main>
+</body>
+</html>`;
 }
 
 export async function GET(
@@ -374,10 +393,20 @@ export async function GET(
   try {
     const { path: segments } = await params;
     const filePath = filePathFromSegments(segments);
-    const type = request.nextUrl.searchParams.get("type") ?? "list";
+    const rawType = request.nextUrl.searchParams.get("type") ?? "list";
+    const type = parseFileRequestType(rawType);
+    if (!type) {
+      return NextResponse.json({ error: "Invalid file request type" }, { status: 400 });
+    }
+    const sessionId = request.nextUrl.searchParams.get("sessionId");
 
-    const allowedRoots = await getAllowedRoots();
-    if (!isPathAllowed(filePath, allowedRoots)) {
+    const allowedRoots = await getAllowedFileRoots();
+    const allowedByRoot = isFilePathAllowed(filePath, allowedRoots);
+    const allowedBySessionReference =
+      !allowedByRoot &&
+      type !== "list" &&
+      await isFilePathReferencedBySession(filePath, sessionId);
+    if (!allowedByRoot && !allowedBySessionReference) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
@@ -403,12 +432,70 @@ export async function GET(
       if (audioMime) {
         return streamFile(filePath, stat, audioMime, request.headers.get("range"));
       }
+      const documentMime = getDocumentMime(filePath);
+      if (documentMime) {
+        return streamFile(filePath, stat, documentMime, request.headers.get("range"));
+      }
       if (stat.size > TEXT_PREVIEW_MAX_BYTES) {
         return NextResponse.json({ error: "File too large for preview (>256KB)" }, { status: 413 });
       }
       const content = fs.readFileSync(filePath, "utf-8");
       const language = getLanguage(filePath);
       return NextResponse.json({ content, language, size: stat.size });
+    }
+
+    if (type === "download") {
+      if (!stat.isFile()) {
+        return NextResponse.json({ error: "Not a file" }, { status: 400 });
+      }
+      const mime = getImageMime(filePath) || getAudioMime(filePath) || getDocumentMime(filePath) || "application/octet-stream";
+      return streamFile(filePath, stat, mime, request.headers.get("range"), true);
+    }
+
+    if (type === "meta") {
+      if (!stat.isFile()) {
+        return NextResponse.json({ error: "Not a file" }, { status: 400 });
+      }
+      const imageMime = getImageMime(filePath);
+      const audioMime = getAudioMime(filePath);
+      const documentMime = getDocumentMime(filePath);
+      return NextResponse.json({
+        size: stat.size,
+        language: getLanguage(filePath),
+        mime: imageMime || audioMime || documentMime || "text/plain",
+        previewKind: documentPreviewKind(filePath),
+      });
+    }
+
+    if (type === "preview") {
+      if (!stat.isFile()) {
+        return NextResponse.json({ error: "Not a file" }, { status: 400 });
+      }
+      if (getFileExt(filePath) !== "docx") {
+        return NextResponse.json({ error: "Preview not available for this file type" }, { status: 400 });
+      }
+      if (stat.size > DOCX_PREVIEW_MAX_BYTES) {
+        return NextResponse.json({ error: "DOCX too large for preview (>10MB)" }, { status: 413 });
+      }
+
+      const mammoth = await import("mammoth");
+      const result = await mammoth.convertToHtml(
+        { path: filePath },
+        {
+          externalFileAccess: false,
+          convertImage: mammoth.images.dataUri,
+        }
+      );
+      const html = wrapDocxPreviewHtml(result.value, path.basename(filePath));
+      return new Response(html, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
     }
 
     if (type === "watch") {
@@ -464,28 +551,21 @@ export async function GET(
       return NextResponse.json({ error: "Not a directory" }, { status: 400 });
     }
 
-    const names = fs.readdirSync(filePath);
-    const entries = names
-      .filter((name) => !IGNORED_NAMES.has(name) && !IGNORED_SUFFIXES.some((s) => name.endsWith(s)))
-      .map((name) => {
-        const full = path.join(filePath, name);
-        try {
-          const s = fs.statSync(full);
-          return {
-            name,
-            isDir: s.isDirectory(),
-            size: s.isFile() ? s.size : 0,
-            modified: s.mtime.toISOString(),
-          };
-        } catch {
-          return null;
-        }
+    // Avoid per-entry stat calls for normal files and directories. Symlinks and
+    // filesystems without directory type information use the stat fallback.
+    const dirents = fs.readdirSync(filePath, { withFileTypes: true });
+    const entries = dirents
+      .filter((d) => !IGNORED_NAMES.has(d.name) && !IGNORED_SUFFIXES.some((s) => d.name.endsWith(s)))
+      .flatMap((d) => {
+        const isDir = resolveDirentIsDirectory(d, path.join(filePath, d.name));
+        return isDir === null
+          ? []
+          : [{ name: d.name, isDir, size: 0, modified: "" }];
       })
-      .filter(Boolean)
       .sort((a, b) => {
         // Dirs first, then files, both alphabetically
-        if (a!.isDir !== b!.isDir) return a!.isDir ? -1 : 1;
-        return a!.name.localeCompare(b!.name);
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
       });
 
     return NextResponse.json({ entries, path: filePath });

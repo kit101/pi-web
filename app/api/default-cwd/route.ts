@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import { mkdirSync } from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { allowFileRoot } from "@/lib/file-access";
+import { ensureDefaultWorkspaceDirectory } from "@/lib/default-workspace";
 
 // POST /api/default-cwd
 // Creates ~/.pi/default-workspace/<YYYYMMDD> if it doesn't exist and returns the path.
 export async function POST() {
   try {
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const dir = join(homedir(), ".pi", "default-workspace", date);
-    mkdirSync(dir, { recursive: true });
+    const dir = ensureDefaultWorkspaceDirectory(homedir(), new Date());
+    allowFileRoot(dir);
     return NextResponse.json({ cwd: dir });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

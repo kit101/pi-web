@@ -1,16 +1,27 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, type MouseEvent } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
-import { encodeFilePathForApi, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { MarkdownViewer } from "./MarkdownViewer";
+import {
+  DOCX_PREVIEW_MAX_BYTES,
+  getFileExt,
+  isAudioPath,
+  isDocumentPreviewPath,
+  isImagePath,
+} from "@/lib/file-types";
+import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { resolveLocalFileHref } from "@/lib/file-links";
+import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins } from "@/lib/markdown";
 
 interface Props {
   filePath: string;
   cwd?: string;
+  sourceSessionId?: string | null;
+  onOpenFile?: (filePath: string) => void;
 }
 
 interface FileData {
@@ -19,19 +30,49 @@ interface FileData {
   size: number;
 }
 
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"]);
-const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "oga", "opus", "m4a", "aac", "flac", "weba", "webm"]);
-
-function isImagePath(filePath: string): boolean {
-  const base = getFileName(filePath);
-  const ext = base.toLowerCase().split(".").pop() ?? "";
-  return IMAGE_EXTS.has(ext);
+function getFileApiUrl(
+  filePath: string,
+  type: "read" | "download" | "meta" | "preview" | "watch",
+  sourceSessionId?: string | null,
+  params: Record<string, string | number | undefined> = {},
+): string {
+  const encoded = encodeFilePathForApi(filePath);
+  const searchParams = new URLSearchParams({ type });
+  if (sourceSessionId) searchParams.set("sessionId", sourceSessionId);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) searchParams.set(key, String(value));
+  }
+  return `/api/files/${encoded}?${searchParams.toString()}`;
 }
 
-function isAudioPath(filePath: string): boolean {
-  const base = getFileName(filePath);
-  const ext = base.toLowerCase().split(".").pop() ?? "";
-  return AUDIO_EXTS.has(ext);
+function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
+  return (
+    <a
+      href={getFileApiUrl(filePath, "download", sourceSessionId)}
+      download={getFileName(filePath)}
+      title="Download file"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: 20,
+        padding: "0 5px",
+        background: "var(--bg-panel)",
+        border: "1px solid var(--border)",
+        borderRadius: 4,
+        color: "var(--text-muted)",
+        cursor: "pointer",
+        flexShrink: 0,
+        textDecoration: "none",
+      }}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+    </a>
+  );
 }
 
 type DiffLine =
@@ -269,7 +310,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
   );
 }
 
-function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
+function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
   const [size, setSize] = useState<number | null>(null);
@@ -291,8 +332,7 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
       esRef.current = null;
     }
 
-    const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -310,10 +350,9 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath]);
+  }, [filePath, sourceSessionId]);
 
-  const encoded = encodeFilePathForApi(filePath);
-  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
+  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
   const formatSizeStr = size != null ? formatSize(size) : null;
 
@@ -354,6 +393,7 @@ function ImageViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
           />
           {watching ? "live" : "static"}
         </span>
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
       </div>
       <div
         style={{
@@ -403,7 +443,7 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
+function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
   const [size, setSize] = useState<number | null>(null);
@@ -425,8 +465,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
       esRef.current = null;
     }
 
-    const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
     es.addEventListener("connected", () => setWatching(true));
@@ -446,10 +485,9 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath]);
+  }, [filePath, sourceSessionId]);
 
-  const encoded = encodeFilePathForApi(filePath);
-  const src = `/api/files/${encoded}?type=read${bust ? `&v=${bust}` : ""}`;
+  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -488,6 +526,7 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
           />
           {watching ? "live" : "static"}
         </span>
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
       </div>
       <div
         style={{
@@ -520,17 +559,141 @@ function AudioViewer({ filePath, cwd }: { filePath: string; cwd?: string }) {
   );
 }
 
-export function FileViewer({ filePath, cwd }: Props) {
-  if (isImagePath(filePath)) {
-    return <ImageViewer filePath={filePath} cwd={cwd} />;
-  }
-  if (isAudioPath(filePath)) {
-    return <AudioViewer filePath={filePath} cwd={cwd} />;
-  }
-  return <TextFileViewer filePath={filePath} cwd={cwd} />;
+function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
+  const [watching, setWatching] = useState(false);
+  const [bust, setBust] = useState(0);
+  const [size, setSize] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const esRef = useRef<EventSource | null>(null);
+
+  const ext = getFileExt(filePath);
+  const isPdf = ext === "pdf";
+  const previewUrl = isPdf
+    ? getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined)
+    : getFileApiUrl(filePath, "preview", sourceSessionId, bust ? { v: bust } : undefined);
+
+  useEffect(() => {
+    setBust(0);
+    setSize(null);
+    setError(null);
+    setWatching(false);
+
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+
+    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      .then((r) => r.json())
+      .then((d: { size?: number; error?: string }) => {
+        if (d.error) setError(d.error);
+        if (typeof d.size === "number") {
+          setSize(d.size);
+          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
+            setError("DOCX too large for preview (>10MB)");
+          }
+        }
+      })
+      .catch((e) => setError(String(e)));
+
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
+    esRef.current = es;
+
+    es.addEventListener("connected", () => setWatching(true));
+    es.addEventListener("change", (e) => {
+      try {
+        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
+        if (typeof d.size === "number") {
+          setSize(d.size);
+          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
+            setError("DOCX too large for preview (>10MB)");
+            return;
+          }
+        }
+      } catch { /* ignore */ }
+      setError(null);
+      setBust((b) => b + 1);
+    });
+    es.addEventListener("error", () => setWatching(false));
+    es.onerror = () => setWatching(false);
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [filePath, isPdf, sourceSessionId]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "4px 16px",
+          borderBottom: "1px solid var(--border)",
+          fontSize: 11,
+          color: "var(--text-dim)",
+          background: "var(--bg)",
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+          {getRelativeFilePath(filePath, cwd)}
+        </span>
+        <span style={{ marginLeft: "auto" }}>{ext === "docx" ? "docx preview" : "pdf"}</span>
+        {size != null && <span>{formatSize(size)}</span>}
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
+        <span
+          title={watching ? "Live sync active" : "Not watching"}
+          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)", flexShrink: 0 }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: watching ? "#4ade80" : "var(--border)",
+              display: "inline-block",
+              boxShadow: watching ? "0 0 4px #4ade80" : "none",
+            }}
+          />
+          {watching ? "live" : "static"}
+        </span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, background: "var(--bg-panel)" }}>
+        {error ? (
+          <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "#f87171", fontSize: 13, textAlign: "center" }}>
+            {error}
+          </div>
+        ) : (
+          <iframe
+            key={previewUrl}
+            src={previewUrl}
+            sandbox={isPdf ? undefined : ""}
+            title={`Preview ${getFileName(filePath)}`}
+            style={{ width: "100%", height: "100%", border: "none", background: isPdf ? "var(--bg)" : "#eef1f5" }}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
-function TextFileViewer({ filePath, cwd }: Props) {
+export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile }: Props) {
+  if (isImagePath(filePath)) {
+    return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+  }
+  if (isAudioPath(filePath)) {
+    return <AudioViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+  }
+  if (isDocumentPreviewPath(filePath)) {
+    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+  }
+  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} />;
+}
+
+function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile }: Props) {
   const { isDark } = useTheme();
   const [data, setData] = useState<FileData | null>(null);
   const [prevContent, setPrevContent] = useState<string | null>(null);
@@ -544,8 +707,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
   const esRef = useRef<EventSource | null>(null);
 
   const fetchContent = useCallback((filePath: string, isRefresh = false) => {
-    const encoded = encodeFilePathForApi(filePath);
-    return fetch(`/api/files/${encoded}?type=read`)
+    return fetch(getFileApiUrl(filePath, "read", sourceSessionId))
       .then((r) => r.json())
       .then((d: FileData & { error?: string }) => {
         if (d.error) {
@@ -567,7 +729,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
         setError(String(e));
         return null;
       });
-  }, []);
+  }, [sourceSessionId]);
 
   // Initial load + SSE watch setup
   useEffect(() => {
@@ -591,8 +753,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
     }).finally(() => setLoading(false));
 
     // Set up SSE watch
-    const encoded = encodeFilePathForApi(filePath);
-    const es = new EventSource(`/api/files/${encoded}?type=watch`);
+    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
     es.addEventListener("connected", () => {
@@ -615,7 +776,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath, fetchContent]);
+  }, [filePath, fetchContent, sourceSessionId]);
 
   if (loading) {
     return (
@@ -637,6 +798,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
 
   const isHtml = data.language === "html";
   const isMarkdown = data.language === "markdown";
+  const markdownDirectory = getFileDirectory(filePath);
   const lines = data.content.split("\n");
   const hasDiff = prevContent !== null && prevContent !== data.content;
 
@@ -781,6 +943,7 @@ function TextFileViewer({ filePath, cwd }: Props) {
             </button>
           </div>
         )}
+        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
       </div>
 
       {/* Content area */}
@@ -795,11 +958,37 @@ function TextFileViewer({ filePath, cwd }: Props) {
             title="HTML preview"
           />
         ) : isMarkdown && previewMode ? (
-          <MarkdownViewer
-            content={data.content}
-            className="markdown-file-preview"
-            style={{ padding: "24px 32px", maxWidth: 800 }}
-          />
+          <div
+            className="markdown-body markdown-file-preview"
+            style={{ padding: "24px 32px" }}
+          >
+            <ReactMarkdown
+              remarkPlugins={markdownPreviewRemarkPlugins}
+              rehypePlugins={markdownPreviewRehypePlugins}
+              components={{
+                a({ href, children, ...props }) {
+                  delete props.node;
+                  const linkedFile = onOpenFile
+                    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
+                    : null;
+                  if (!linkedFile || !onOpenFile) {
+                    return <a href={href} {...props}>{children}</a>;
+                  }
+
+                  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+                    if (event.defaultPrevented || event.button !== 0) return;
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    onOpenFile(linkedFile);
+                  };
+
+                  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
+                },
+              }}
+            >
+              {data.content}
+            </ReactMarkdown>
+          </div>
         ) : (
           <SyntaxHighlighter
             language={data.language === "text" ? "plaintext" : data.language}

@@ -2,7 +2,26 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-type SendShortcut = "enter-send" | "mod-enter-send";
+export type SendShortcut = "enter-send" | "mod-enter-send";
+
+export function shouldSendOnEnter(
+  shortcut: SendShortcut,
+  modifierPressed: boolean,
+  shiftPressed: boolean,
+): boolean {
+  if (shiftPressed) return false;
+  return shortcut === "mod-enter-send" ? modifierPressed : !modifierPressed;
+}
+
+export function getNextSendShortcut(shortcut: SendShortcut): SendShortcut {
+  return shortcut === "mod-enter-send" ? "enter-send" : "mod-enter-send";
+}
+
+export function parseSendShortcut(value: string | null): SendShortcut {
+  return value === "enter-send" || value === "mod-enter-send"
+    ? value
+    : "mod-enter-send";
+}
 
 const listeners = new Set<() => void>();
 
@@ -16,7 +35,7 @@ function subscribe(cb: () => void): () => void {
 function getSnapshot(): SendShortcut {
   if (typeof window === "undefined") return "mod-enter-send";
   try {
-    return (localStorage.getItem("pi-send-shortcut") as SendShortcut) || "mod-enter-send";
+    return parseSendShortcut(localStorage.getItem("pi-send-shortcut"));
   } catch {
     return "mod-enter-send";
   }
