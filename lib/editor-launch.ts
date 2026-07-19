@@ -97,6 +97,25 @@ function defaultIsFilePathAllowed(target: string, allowedRoots: Set<string>): bo
   return false;
 }
 
+function resolveCanonicalCandidate(filePath: string): string {
+  let ancestor = path.resolve(filePath);
+  const suffix: string[] = [];
+
+  while (true) {
+    try {
+      return path.resolve(realpathSync(ancestor), ...suffix);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) throw error;
+      suffix.unshift(path.basename(ancestor));
+      ancestor = parent;
+    }
+  }
+}
+
 export function resolveAllowedEditorFile(
   filePath: string,
   roots: Set<string>,
@@ -104,13 +123,6 @@ export function resolveAllowedEditorFile(
 ): string {
   if (!isAllowed(filePath, roots)) throw new Error("Access denied");
 
-  const stat = lstatSync(filePath);
-  if (stat.isSymbolicLink()) {
-    throw new Error("Editor target must not be a symbolic link");
-  }
-  if (!stat.isFile()) throw new Error("Editor target is not a file");
-
-  const realFilePath = realpathSync(filePath);
   const realRoots = new Set<string>();
   for (const root of roots) {
     try {
@@ -120,8 +132,18 @@ export function resolveAllowedEditorFile(
     }
   }
 
+  const canonicalCandidate = resolveCanonicalCandidate(filePath);
+  if (!isAllowed(canonicalCandidate, realRoots)) throw new Error("Access denied");
+
+  const stat = lstatSync(filePath);
+  if (stat.isSymbolicLink()) {
+    throw new Error("Editor target must not be a symbolic link");
+  }
+  if (!stat.isFile()) throw new Error("Editor target is not a file");
+
+  const realFilePath = realpathSync(filePath);
   if (!isAllowed(realFilePath, realRoots)) throw new Error("Access denied");
-  return filePath;
+  return realFilePath;
 }
 
 export function launchEditor(command: string, args: string[]): Promise<void> {
