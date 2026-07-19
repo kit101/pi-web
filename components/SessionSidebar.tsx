@@ -5,6 +5,7 @@ import { useEditor } from "@/hooks/useEditor";
 import { buildEditorActionBody, isEditorSelectionReady } from "@/lib/editor-config";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
+import { WorkspaceDirectoryBrowser } from "./WorkspaceDirectoryBrowser";
 
 declare global {
   interface Window {
@@ -329,6 +330,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [directoryBrowserOpen, setDirectoryBrowserOpen] = useState(false);
   const [projectFilter, setProjectFilter] = useState("");
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPathValue, setCustomPathValue] = useState("");
@@ -714,7 +716,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (!directoryBrowserOpen && dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
         setProjectFilter("");
         setCustomPathOpen(false);
@@ -731,7 +733,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [directoryBrowserOpen]);
 
   // Clicking a session moves the effective cwd to that session's worktree.
   // Done on the click path (not via the selectedCwd prop sync) so it also
@@ -796,6 +798,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sessionTree = buildSessionTree(filteredSessions);
 
   return (
+    <>
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Header */}
       <div
@@ -1047,6 +1050,33 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
                   </svg>
                   <span>Use default directory</span>
+                </button>
+              )}
+
+              {!customPathOpen && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDirectoryBrowserOpen(true);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    width: "100%",
+                    padding: "8px 10px",
+                    background: "none",
+                    border: "none",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontSize: 11,
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M1 3A1 1 0 0 1 2 2H4L5 3.5H8.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 1 8V3Z" />
+                  </svg>
+                  <span>Browse directories…</span>
                 </button>
               )}
 
@@ -1637,6 +1667,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </div>
       )}
     </div>
+    {directoryBrowserOpen && (
+      <WorkspaceDirectoryBrowser
+        onClose={() => setDirectoryBrowserOpen(false)}
+        onSelect={(cwd) => {
+          setSelectedCwd(cwd);
+          setCustomPathOpen(false);
+          setCustomPathValue("");
+          setCustomPathError(null);
+          setDropdownOpen(false);
+          setDirectoryBrowserOpen(false);
+        }}
+      />
+    )}
+    </>
   );
 }
 
