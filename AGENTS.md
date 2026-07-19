@@ -54,6 +54,8 @@ app/api/
   auth/providers/route.ts         GET OAuth provider list
   cwd/validate/route.ts           POST validate/select a cwd
   default-cwd/route.ts            POST create ~/.pi/default-workspace/YYYYMMDD
+  directories/route.ts            GET secure directory-only workspace browsing
+  file-actions/route.ts           POST external editor actions
   files/[...path]/route.ts        GET file contents for viewer
   home/route.ts                   GET user home directory
   models/route.ts                 GET { models, modelList, defaultModel }
@@ -89,18 +91,21 @@ components/
   BranchNavigator.tsx in-session branch switcher
   ChatMinimap.tsx     scroll minimap alongside the message list
   MarkdownBody.tsx    markdown renderer
-  ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
-  PluginsConfig.tsx   modal for installed package plugins
-  SkillsConfig.tsx    modal for loaded/search/installable skills
+  ModelsConfig.tsx    model and provider settings content
+  PluginsConfig.tsx   installed package plugin settings content
+  SettingsConfig.tsx  unified Models/Skills/Plugins/Editor/General shell
+  SkillsConfig.tsx    loaded/search/installable skill settings content
   FileExplorer.tsx    file tree inside sidebar
   FileIcons.tsx       file icon helpers
   FileViewer.tsx      file content in a tab
   TabBar.tsx          tab bar (Chat + open file tabs)
+  WorkspaceDirectoryBrowser.tsx secure workspace picker
 
 hooks/
   useAgentSession.ts  messages + streaming + SSE + fork/navigate/reconciliation logic
   useAudio.ts         completion sound + browser AudioContext unlock
   useDragDrop.ts      shared drag/drop state
+  useEditor.ts        shared external-editor preference
   useIsMobile.ts      responsive breakpoint hook
   useTheme.ts         theme state
 ```
@@ -156,6 +161,8 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 ### File access allow-list
 - `/api/files` is intentionally not a general filesystem browser. Allowed roots come from session cwds, their resolved project roots, `~/.pi/default-workspace/<YYYYMMDD>`, and roots explicitly added with `allowFileRoot()`.
 - `/api/cwd/validate`, `/api/default-cwd`, and `/api/worktrees` call `allowFileRoot()` when they make a new location browsable.
+- `/api/directories` may browse the user's home directory, but directory browsing never authorizes home for file-content reads.
+- Custom editor commands must be absolute executable files. `/api/file-actions` launches them without a shell and passes the target file as a separate argument.
 
 ### Plugins and skills
 - `/api/plugins` uses pi's `SettingsManager` + `DefaultPackageManager` for global/project package install, remove, update, enable, and disable. Disabling writes empty `extensions/skills/prompts/themes` arrays for that package entry.
