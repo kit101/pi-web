@@ -23,6 +23,62 @@
 
 ---
 
+### Task 0: Restore a clean lint baseline
+
+**Files:**
+- Modify: `components/ChatInput.tsx`
+- Modify: `components/ChatMinimap.tsx`
+
+**Constraints:**
+- Fix the nine existing `react-hooks/preserve-manual-memoization` errors without disabling the rule.
+- Preserve runtime behavior; this task is limited to callback placement and dependency stability.
+- Do not modify ESLint configuration or unrelated files.
+
+- [ ] **Step 1: Verify the focused lint failures**
+
+Run:
+
+```bash
+node_modules/.bin/eslint components/ChatInput.tsx components/ChatMinimap.tsx
+```
+
+Expected: nine `react-hooks/preserve-manual-memoization` errors. In `ChatInput`, inspect the callback referenced before declaration and unstable derived slash-command values. In `ChatMinimap`, inspect callbacks that capture mutable ref objects while reading `.current`.
+
+- [ ] **Step 2: Make the smallest behavior-preserving fixes**
+
+Move the imperative-handle registration after the image-processing callback is declared, memoize only derived slash-command state that is used by memoized callbacks, and make minimap callback inputs explicit without changing scroll or measurement behavior.
+
+- [ ] **Step 3: Verify focused and full lint are GREEN**
+
+Run:
+
+```bash
+node_modules/.bin/eslint components/ChatInput.tsx components/ChatMinimap.tsx
+npm run lint
+```
+
+Expected: both commands pass with no errors.
+
+- [ ] **Step 4: Verify the regression suite**
+
+Run:
+
+```bash
+test_files=($(rg --files -g '*.test.mjs'))
+node --test "$test_files[@]"
+```
+
+Expected: all 92 baseline tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add components/ChatInput.tsx components/ChatMinimap.tsx
+git commit -m "fix: restore hooks lint baseline"
+```
+
+---
+
 ### Task 1: Add validated editor configuration and shared hook
 
 **Files:**
