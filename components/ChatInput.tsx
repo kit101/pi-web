@@ -240,6 +240,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
 
+  const processImageFiles = useCallback(async (files: File[]) => {
+    if (isStreaming) return;
+    const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+    if (!imageFiles.length) return;
+    const newImages = await Promise.all(
+      imageFiles.map(
+        (file) =>
+          new Promise<AttachedImage>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result as string;
+              // result is "data:<mime>;base64,<data>"
+              const base64 = result.split(",")[1];
+              resolve({ data: base64, mimeType: file.type, previewUrl: URL.createObjectURL(file) });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+    setAttachedImages((prev) => [...prev, ...newImages]);
+  }, [isStreaming]);
+
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
@@ -298,29 +321,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       processImageFiles(files);
     },
   }));
-
-  const processImageFiles = useCallback(async (files: File[]) => {
-    if (isStreaming) return;
-    const imageFiles = files.filter((f) => f.type.startsWith("image/"));
-    if (!imageFiles.length) return;
-    const newImages = await Promise.all(
-      imageFiles.map(
-        (file) =>
-          new Promise<AttachedImage>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const result = reader.result as string;
-              // result is "data:<mime>;base64,<data>"
-              const base64 = result.split(",")[1];
-              resolve({ data: base64, mimeType: file.type, previewUrl: URL.createObjectURL(file) });
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          })
-      )
-    );
-    setAttachedImages((prev) => [...prev, ...newImages]);
-  }, [isStreaming]);
 
   const removeImage = useCallback((index: number) => {
     setAttachedImages((prev) => {
@@ -407,11 +407,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     clearInput();
   }, [value, attachedImages, isStreaming, onBuiltinCommand, onSend, clearInput, onAudioUnlock]);
 
-  const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
-    ? value.slice(1).toLowerCase()
-    : null;
+  const slashQuery = React.useMemo(() => (
+    value.startsWith("/") && !/\s/.test(value.slice(1))
+      ? value.slice(1).toLowerCase()
+      : null
+  ), [value]);
 
-  const filteredSlashCommands = (() => {
+  const filteredSlashCommands = React.useMemo(() => {
     if (slashQuery === null) return [];
     const commands = [...(isStreaming ? [] : BUILTIN_SLASH_COMMANDS), ...(slashCommands ?? [])];
     return [...commands]
@@ -426,7 +428,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return SLASH_SOURCE_ORDER[a.source] - SLASH_SOURCE_ORDER[b.source]
           || MODEL_OPTION_COLLATOR.compare(a.name, b.name);
       });
-  })();
+  }, [isStreaming, slashCommands, slashQuery]);
 
   const groupedSlashCommands = (() => {
     const groups = new Map<SlashCommandSource, { source: SlashCommandSource; items: { command: SlashCommandPaletteItem; index: number }[] }>();
