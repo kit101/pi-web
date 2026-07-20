@@ -1,4 +1,5 @@
 import type { AssistantContentBlock, AssistantMessage, ThinkingContent, ToolCallContent } from "./types";
+import { getAssistantMessageStatusText } from "./assistant-status";
 
 interface DisplayOptions {
   isStreaming?: boolean;
@@ -31,6 +32,27 @@ export function splitFinalAssistantBlocks(
   return {
     answerBlocks: blocks.slice(lastProcessIndex + 1),
     processBlocks: blocks.slice(0, lastProcessIndex + 1),
+  };
+}
+
+export function splitFinalAssistantMessage(
+  message: AssistantMessage,
+  options: DisplayOptions = {},
+): { answerMessage: AssistantMessage | null; processMessage: AssistantMessage | null } {
+  const { answerBlocks, processBlocks } = splitFinalAssistantBlocks(message, options);
+  return {
+    answerMessage: answerBlocks.length > 0 || getAssistantMessageStatusText(message)
+      ? { ...message, content: answerBlocks }
+      : null,
+    processMessage: processBlocks.length > 0
+      ? {
+          ...message,
+          content: processBlocks,
+          usage: undefined,
+          stopReason: undefined,
+          errorMessage: undefined,
+        }
+      : null,
   };
 }
 
